@@ -1,0 +1,181 @@
+[
+  {
+    "id": "seed-burger",
+    "name": "The Original Smash Burger",
+    "mode": "A",
+    "basePrice": 189,
+    "category": "Burgers",
+    "image": null,
+    "removalRefund": false,
+    "ingredients": [
+      {
+        "id": "b1",
+        "name": "Sesame bun",
+        "included": true,
+        "mandatory": true,
+        "unitPrice": 0,
+        "maxQty": 1,
+        "allergens": [
+          "Gluten"
+        ]
+      },
+      {
+        "id": "b2",
+        "name": "Beef patty",
+        "included": true,
+        "mandatory": true,
+        "unitPrice": 80,
+        "maxQty": 3,
+        "allergens": []
+      },
+      {
+        "id": "b3",
+        "name": "Cheddar cheese",
+        "included": true,
+        "mandatory": false,
+        "unitPrice": 20,
+        "maxQty": 3,
+        "allergens": [
+          "Dairy"
+        ]
+      },
+      {
+        "id": "b4",
+        "name": "Pickles",
+        "included": true,
+        "mandatory": false,
+        "unitPrice": 0,
+        "maxQty": 1,
+        "allergens": []
+      },
+      {
+        "id": "b5",
+        "name": "Caramelised onion",
+        "included": true,
+        "mandatory": false,
+        "unitPrice": 0,
+        "maxQty": 1,
+        "allergens": []
+      },
+      {
+        "id": "b6",
+        "name": "House sauce",
+        "included": true,
+        "mandatory": false,
+        "unitPrice": 0,
+        "maxQty": 1,
+        "allergens": [
+          "Egg"
+        ]
+      },
+      {
+        "id": "b7",
+        "name": "Jalapeño",
+        "included": false,
+        "mandatory": false,
+        "unitPrice": 15,
+        "maxQty": 2,
+        "allergens": []
+      }
+    ]
+  },
+  {
+    "id": "seed-paneer",
+    "name": "Paneer Butter Masala",
+    "mode": "B",
+    "basePrice": 249,
+    "category": "Curries",
+    "image": null,
+    "removalRefund": false,
+    "ingredients": [
+      {
+        "name": "Paneer",
+        "allergens": [
+          "Dairy"
+        ],
+        "swappable": false
+      },
+      {
+        "name": "Tomato-butter gravy",
+        "allergens": [
+          "Dairy"
+        ],
+        "swappable": false
+      },
+      {
+        "name": "Cream",
+        "allergens": [
+          "Dairy"
+        ],
+        "swappable": true,
+        "swapOptions": [
+          {
+            "label": "Regular cream",
+            "price": 0
+          },
+          {
+            "label": "No cream (lighter)",
+            "price": 0
+          }
+        ]
+      },
+      {
+        "name": "Kasuri methi",
+        "allergens": [],
+        "swappable": false
+      },
+      {
+        "name": "Cashew paste",
+        "allergens": [
+          "Tree nuts"
+        ],
+        "swappable": false
+      }
+    ]
+  },
+  {
+    "id": "seed-cooler",
+    "name": "Mango Basil Cooler",
+    "mode": "B",
+    "basePrice": 149,
+    "category": "Mocktails",
+    "image": null,
+    "removalRefund": true,
+    "ingredients": [
+      {
+        "name": "Base juice",
+        "allergens": [],
+        "swappable": true,
+        "swapOptions": [
+          {
+            "label": "Mango",
+            "price": 0
+          },
+          {
+            "label": "Watermelon",
+            "price": 0
+          },
+          {
+            "label": "Pineapple",
+            "price": 10
+          }
+        ]
+      },
+      {
+        "name": "Basil seeds",
+        "allergens": [],
+        "swappable": false
+      },
+      {
+        "name": "Soda top-up",
+        "allergens": [],
+        "swappable": false
+      },
+      {
+        "name": "Mint",
+        "allergens": [],
+        "swappable": false
+      }
+    ]
+  }
+]

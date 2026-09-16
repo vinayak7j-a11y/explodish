@@ -1,0 +1,13 @@
+{
+  "name": "layer-menu",
+  "version": "0.1.0",
+  "description": "Interactive customizable restaurant menu - customer viewer, owner onboarding tool, kitchen/dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layer — Interactive Menu</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="shell">
+  <div class="masthead">
+    <div class="mark">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 3L21 8L12 13L3 8L12 3Z" stroke="#2A1B08" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M3 12L12 17L21 12" stroke="#2A1B08" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M3 16L12 21L21 16" stroke="#2A1B08" stroke-width="1.6" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Layer</h1>
+      <div class="tag">Open a dish. See inside it. Build it your way.</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="customer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3v6M5 3v6a2 2 0 002 2 2 2 0 002-2V3M17 3v18M17 3a4 4 0 00-4 4v4h4"/></svg>
+      Menu
+    </button>
+    <button class="tab" data-tab="owner">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20l9-9-9-9-9 9 9 9z"/><path d="M12 8v4l3 2"/></svg>
+      Owner tools
+    </button>
+    <button class="tab" data-tab="kitchen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+      Kitchen &amp; dashboard
+    </button>
+  </div>
+  <div class="panel" id="panel">Loading…</div>
+</div>
+
+<button class="cart-fab" id="cartFab" style="display:none;"></button>
+<div class="cart-panel" id="cartPanel" style="display:none;"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
