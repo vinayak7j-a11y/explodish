@@ -1,14 +1,15 @@
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
+const store = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
 
 /* Change this in production — a committed default is fine for local/dev
    use, but anyone who can read this file can forge login tokens if it's
@@ -23,42 +24,44 @@ if (JWT_SECRET === DEV_SECRET) {
   console.warn('WARNING: using the insecure dev JWT secret. Set JWT_SECRET before deploying.');
 }
 const COOKIE_NAME = 'explodish_auth';
+const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10); // keeps login timing the same for unknown emails
 
-const RESTAURANTS_FILE = path.join(__dirname, 'data', 'restaurants.json');
-const DISHES_FILE = path.join(__dirname, 'data', 'dishes.json');
-const ORDERS_FILE = path.join(__dirname, 'data', 'orders.json');
-
-app.use(express.json({ limit: '12mb' }));
+/* ---------- Basic hardening ---------- */
+app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('X-Frame-Options', 'DENY');
+  res.set('Referrer-Policy', 'same-origin');
+  next();
+});
 app.use(cookieParser());
+/* Dish routes carry base64 photos, so they get a big body limit, but only
+   after the caller is logged in. Everything else is capped at 100kb. */
+app.use('/api/dishes', requireAuth, express.json({ limit: '12mb' }));
+app.use(express.json({ limit: '100kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-function readJSON(file, fallback) {
-  try {
-    const raw = fs.readFileSync(file, 'utf8');
-    return JSON.parse(raw);
-  } catch (e) {
-    return fallback;
-  }
+/* Tiny in-memory rate limiter (per IP + route). Set TRUST_PROXY=1 when
+   deployed behind a proxy so the real client IP is used. */
+const hits = new Map();
+function rateLimit(max, windowMs) {
+  return (req, res, next) => {
+    const key = req.ip + ' ' + req.path;
+    const now = Date.now();
+    let e = hits.get(key);
+    if (!e || e.reset < now) { e = { count: 0, reset: now + windowMs }; hits.set(key, e); }
+    e.count++;
+    if (e.count > max) {
+      res.set('Retry-After', String(Math.ceil((e.reset - now) / 1000)));
+      return res.status(429).json({ error: 'Too many attempts. Please wait a few minutes and try again.' });
+    }
+    next();
+  };
 }
-function writeJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
-function uid() {
-  return crypto.randomBytes(5).toString('hex');
-}
-function slugify(name) {
-  return String(name).toLowerCase().trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'restaurant';
-}
-function uniqueSlug(base, restaurants) {
-  let slug = base, n = 2;
-  while (restaurants.some(r => r.slug === slug)) {
-    slug = `${base}-${n}`;
-    n++;
-  }
-  return slug;
-}
+setInterval(() => { const now = Date.now(); for (const [k, e] of hits) if (e.reset < now) hits.delete(k); }, 60000).unref();
+
+/* ---------- Helpers ---------- */
+function uid() { return crypto.randomBytes(5).toString('hex'); }
+
 function signToken(restaurantId) {
   return jwt.sign({ restaurantId }, JWT_SECRET, { expiresIn: '30d' });
 }
@@ -71,67 +74,131 @@ function setAuthCookie(res, restaurantId) {
   });
 }
 
-/* Every admin route (owner tools, kitchen dashboard, dish mutations) goes
-   through this — it's the entire boundary between "public menu visitor"
-   and "logged-in restaurant owner". Attaches req.restaurantId on success. */
+/* Every admin route goes through this — it's the entire boundary between
+   "public menu visitor" and "logged-in restaurant owner". It also checks the
+   restaurant still exists and is active, so deactivating an account (for
+   billing, say) cuts off access immediately. Sets req.restaurantId. */
 function requireAuth(req, res, next) {
-  const token = req.cookies[COOKIE_NAME];
+  const token = req.cookies && req.cookies[COOKIE_NAME];
   if (!token) return res.status(401).json({ error: 'Not logged in' });
+  let payload;
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.restaurantId = payload.restaurantId;
-    next();
+    payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
   } catch (e) {
     return res.status(401).json({ error: 'Session expired — please log in again' });
   }
+  const restaurant = store.findById(payload.restaurantId);
+  if (!restaurant || !restaurant.active) return res.status(401).json({ error: 'Account not available' });
+  req.restaurantId = restaurant.id;
+  next();
 }
 
-function publicRestaurant(r) {
-  // Never send the password hash (or anything else sensitive) to the client.
+// What the logged-in owner sees about their own account.
+function ownerRestaurant(r) {
   return { id: r.id, slug: r.slug, name: r.name, email: r.email, active: r.active, createdAt: r.createdAt };
+}
+// What the public (customers scanning a QR code) sees. No email, no dates.
+function customerRestaurant(r) {
+  return { id: r.id, slug: r.slug, name: r.name, active: r.active };
+}
+
+/* Cleans untrusted JSON: only plain values, limited depth/size, no odd keys. */
+const BAD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+function cleanValue(v, depth, o) {
+  if (v === null || typeof v === 'boolean') return v;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  if (typeof v === 'string') return v.slice(0, o.maxStr);
+  if (depth >= o.maxDepth) return undefined;
+  if (Array.isArray(v)) return v.slice(0, o.maxArr).map(x => cleanValue(x, depth + 1, o)).filter(x => x !== undefined);
+  if (typeof v === 'object') {
+    const out = {};
+    Object.keys(v).slice(0, 40).forEach(k => {
+      if (BAD_KEYS.has(k) || !/^[A-Za-z0-9_-]{1,40}$/.test(k)) return;
+      const c = cleanValue(v[k], depth + 1, o);
+      if (c !== undefined) out[k] = c;
+    });
+    return out;
+  }
+  return undefined;
+}
+
+const IMG_RE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/;
+function sanitizeDish(b) {
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return { error: 'Invalid dish' };
+  const name = String(b.name || '').trim().slice(0, 80);
+  const basePrice = Number(b.basePrice);
+  if (!name) return { error: 'name and basePrice are required' };
+  if (!Number.isFinite(basePrice) || basePrice <= 0 || basePrice > 100000) {
+    return { error: 'name and basePrice are required (basePrice must be a positive number)' };
+  }
+  let image = null;
+  if (b.image) {
+    if (typeof b.image !== 'string' || b.image.length > 4500000 || !IMG_RE.test(b.image)) {
+      return { error: 'Photo must be a JPG, PNG, GIF or WebP image under 3MB' };
+    }
+    image = b.image;
+  }
+  const lim = { maxDepth: 4, maxStr: 200, maxArr: 60 };
+  return {
+    dish: {
+      name,
+      mode: b.mode === 'B' ? 'B' : 'A',
+      basePrice,
+      category: String(b.category || '').trim().slice(0, 40),
+      image,
+      removalRefund: !!b.removalRefund,
+      dietary: ['veg', 'non-veg', 'egg'].includes(b.dietary) ? b.dietary : 'veg',
+      jainFriendly: !!b.jainFriendly,
+      ingredients: Array.isArray(b.ingredients) ? cleanValue(b.ingredients, 0, lim) : [],
+      modifiers: Array.isArray(b.modifiers) ? cleanValue(b.modifiers, 0, lim) : []
+    }
+  };
 }
 
 /* ---------- Auth ---------- */
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', rateLimit(10, 60 * 60 * 1000), async (req, res) => {
   const { name, email, password } = req.body || {};
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'name, email, and password are all required' });
   }
-  if (String(password).length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if ([name, email, password].some(v => typeof v !== 'string')) {
+    return res.status(400).json({ error: 'name, email, and password must be text' });
   }
-  const restaurants = readJSON(RESTAURANTS_FILE, []);
-  const emailNorm = String(email).trim().toLowerCase();
-  if (restaurants.some(r => r.email === emailNorm)) {
-    return res.status(409).json({ error: 'An account with that email already exists' });
+  const cleanName = name.trim();
+  const emailNorm = email.trim().toLowerCase();
+  if (cleanName.length < 2 || cleanName.length > 80) {
+    return res.status(400).json({ error: 'Restaurant name must be 2 to 80 characters' });
   }
+  if (emailNorm.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
+    return res.status(400).json({ error: 'Please enter a valid email address' });
+  }
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (Buffer.byteLength(password) > 72) return res.status(400).json({ error: 'Password must be 72 bytes or fewer' });
+
   const passwordHash = await bcrypt.hash(password, 10);
-  const restaurant = {
-    id: uid(),
-    slug: uniqueSlug(slugify(name), restaurants),
-    name: String(name).trim(),
-    email: emailNorm,
-    passwordHash,
+  const restaurant = store.createRestaurant({
+    id: uid(), name: cleanName, email: emailNorm, passwordHash,
     active: true, // self-serve for now — no billing gate yet, see PROJECT_CONTEXT.md
     createdAt: new Date().toISOString()
-  };
-  restaurants.push(restaurant);
-  writeJSON(RESTAURANTS_FILE, restaurants);
+  });
+  if (!restaurant) return res.status(409).json({ error: 'An account with that email already exists' });
   setAuthCookie(res, restaurant.id);
-  res.status(201).json(publicRestaurant(restaurant));
+  res.status(201).json(ownerRestaurant(restaurant));
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', rateLimit(10, 15 * 60 * 1000), async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
-  const restaurants = readJSON(RESTAURANTS_FILE, []);
-  const restaurant = restaurants.find(r => r.email === String(email).trim().toLowerCase());
-  if (!restaurant) return res.status(401).json({ error: 'Incorrect email or password' });
-  const ok = await bcrypt.compare(password, restaurant.passwordHash);
-  if (!ok) return res.status(401).json({ error: 'Incorrect email or password' });
+  if (typeof email !== 'string' || typeof password !== 'string') {
+    return res.status(400).json({ error: 'email and password must be text' });
+  }
+  const restaurant = store.findByEmail(email.trim().toLowerCase());
+  const ok = await bcrypt.compare(password, restaurant ? restaurant.passwordHash : DUMMY_HASH);
+  if (!restaurant || !ok) return res.status(401).json({ error: 'Incorrect email or password' });
+  if (!restaurant.active) return res.status(403).json({ error: 'This account is not active' });
   setAuthCookie(res, restaurant.id);
-  res.json(publicRestaurant(restaurant));
+  res.json(ownerRestaurant(restaurant));
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -140,10 +207,7 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
-  const restaurants = readJSON(RESTAURANTS_FILE, []);
-  const restaurant = restaurants.find(r => r.id === req.restaurantId);
-  if (!restaurant) return res.status(401).json({ error: 'Account no longer exists' });
-  res.json(publicRestaurant(restaurant));
+  res.json(ownerRestaurant(store.findById(req.restaurantId)));
 });
 
 /* ---------- Dishes ---------- */
@@ -152,82 +216,77 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
    UI uses (requires login, always scoped to the logged-in restaurant —
    there is no dish route that lets you touch another restaurant's menu). */
 
+function activeBySlug(slug) {
+  const r = store.findBySlug(slug);
+  return r && r.active ? r : null;
+}
+
 app.get('/api/r/:slug', (req, res) => {
-  const restaurants = readJSON(RESTAURANTS_FILE, []);
-  const restaurant = restaurants.find(r => r.slug === req.params.slug && r.active);
+  const restaurant = activeBySlug(req.params.slug);
   if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
-  res.json(publicRestaurant(restaurant));
+  res.json(customerRestaurant(restaurant));
 });
 
 app.get('/api/r/:slug/dishes', (req, res) => {
-  const restaurants = readJSON(RESTAURANTS_FILE, []);
-  const restaurant = restaurants.find(r => r.slug === req.params.slug && r.active);
+  const restaurant = activeBySlug(req.params.slug);
   if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
-  const dishes = readJSON(DISHES_FILE, []).filter(d => d.restaurantId === restaurant.id);
-  res.json(dishes);
+  res.json(store.listDishes(restaurant.id));
 });
 
 app.get('/api/dishes', requireAuth, (req, res) => {
-  const dishes = readJSON(DISHES_FILE, []).filter(d => d.restaurantId === req.restaurantId);
-  res.json(dishes);
+  res.json(store.listDishes(req.restaurantId));
 });
 
 app.post('/api/dishes', requireAuth, (req, res) => {
-  const dishes = readJSON(DISHES_FILE, []);
-  const dish = req.body;
-  if (!dish.name || !dish.basePrice) {
-    return res.status(400).json({ error: 'name and basePrice are required' });
-  }
+  const { error, dish } = sanitizeDish(req.body);
+  if (error) return res.status(400).json({ error });
   dish.id = uid();
   dish.restaurantId = req.restaurantId;
-  dishes.push(dish);
-  writeJSON(DISHES_FILE, dishes);
+  store.insertDish(dish);
   res.status(201).json(dish);
 });
 
 app.put('/api/dishes/:id', requireAuth, (req, res) => {
-  const dishes = readJSON(DISHES_FILE, []);
-  const idx = dishes.findIndex(d => d.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Dish not found' });
-  if (dishes[idx].restaurantId !== req.restaurantId) {
+  const existing = store.getDish(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Dish not found' });
+  if (existing.restaurantId !== req.restaurantId) {
     return res.status(403).json({ error: 'Not your dish to edit' });
   }
-  const updated = { ...req.body, id: req.params.id, restaurantId: req.restaurantId };
-  dishes[idx] = updated;
-  writeJSON(DISHES_FILE, dishes);
-  res.json(updated);
+  const { error, dish } = sanitizeDish(req.body);
+  if (error) return res.status(400).json({ error });
+  dish.id = existing.id;
+  dish.restaurantId = req.restaurantId;
+  store.updateDish(dish);
+  res.json(dish);
 });
 
 app.delete('/api/dishes/:id', requireAuth, (req, res) => {
-  const dishes = readJSON(DISHES_FILE, []);
-  const dish = dishes.find(d => d.id === req.params.id);
-  if (dish && dish.restaurantId !== req.restaurantId) {
+  const existing = store.getDish(req.params.id);
+  if (existing && existing.restaurantId !== req.restaurantId) {
     return res.status(403).json({ error: 'Not your dish to delete' });
   }
-  const remaining = dishes.filter(d => d.id !== req.params.id);
-  writeJSON(DISHES_FILE, remaining);
-  res.json({ deleted: dishes.length - remaining.length });
+  res.json({ deleted: existing ? store.deleteDish(req.params.id, req.restaurantId) : 0 });
 });
 
 /* ---------- Orders ---------- */
 
-app.post('/api/r/:slug/orders', (req, res) => {
-  const restaurants = readJSON(RESTAURANTS_FILE, []);
-  const restaurant = restaurants.find(r => r.slug === req.params.slug && r.active);
+app.post('/api/r/:slug/orders', rateLimit(60, 10 * 60 * 1000), (req, res) => {
+  const restaurant = activeBySlug(req.params.slug);
   if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
-  const orders = readJSON(ORDERS_FILE, []);
-  const order = req.body;
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    return res.status(400).json({ error: 'Invalid order' });
+  }
+  const order = cleanValue(req.body, 0, { maxDepth: 8, maxStr: 500, maxArr: 200 });
+  if (JSON.stringify(order).length > 60000) return res.status(413).json({ error: 'Order is too large' });
   order.id = uid();
   order.restaurantId = restaurant.id;
   order.time = new Date().toISOString();
-  orders.push(order);
-  writeJSON(ORDERS_FILE, orders);
+  store.insertOrder(order);
   res.status(201).json(order);
 });
 
 app.get('/api/orders', requireAuth, (req, res) => {
-  const orders = readJSON(ORDERS_FILE, []).filter(o => o.restaurantId === req.restaurantId);
-  res.json(orders);
+  res.json(store.listOrders(req.restaurantId));
 });
 
 /* ---------- QR codes (table entry point) ---------- */
@@ -237,10 +296,11 @@ app.get('/api/orders', requireAuth, (req, res) => {
    and just asks this endpoint to turn it into a scannable image. */
 app.get('/api/qr', async (req, res) => {
   const text = req.query.text;
-  if (!text) return res.status(400).json({ error: 'text query param is required' });
+  if (!text || typeof text !== 'string') return res.status(400).json({ error: 'text query param is required' });
+  if (text.length > 500) return res.status(400).json({ error: 'text is too long' });
   const size = Math.min(Math.max(parseInt(req.query.size) || 300, 100), 1000);
   try {
-    const png = await QRCode.toBuffer(String(text), {
+    const png = await QRCode.toBuffer(text, {
       type: 'png', width: size, margin: 1,
       color: { dark: '#241C15', light: '#FBF6E9' }
     });
@@ -263,6 +323,23 @@ app.get('/admin', (req, res) => {
 app.get('/r/:slug', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+/* ---------- Errors: always JSON, never a stack trace ---------- */
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.too.large') return res.status(413).json({ error: 'Request is too large' });
+  if (err && (err.type === 'entity.parse.failed' || err instanceof SyntaxError)) return res.status(400).json({ error: 'Invalid JSON' });
+  console.error(err);
+  res.status(500).json({ error: 'Something went wrong' });
+});
+
+/* Dev convenience only: a fresh database gets the demo owner account. */
+if (store.restaurantCount() === 0 && process.env.NODE_ENV !== 'production') {
+  store.createRestaurant({
+    id: 'rest-demo', name: 'Demo Kitchen', email: 'owner@demo.test',
+    passwordHash: bcrypt.hashSync('demo12345', 10), active: true, createdAt: new Date().toISOString()
+  });
+  console.log('Created demo account: owner@demo.test / demo12345');
+}
 
 app.listen(PORT, () => {
   console.log(`Explodish menu app running at http://localhost:${PORT}`);
