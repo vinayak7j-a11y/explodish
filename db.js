@@ -53,7 +53,9 @@ const q = {
   updDish: db.prepare('UPDATE dishes SET data = ? WHERE id = ? AND restaurant_id = ?'),
   delDish: db.prepare('DELETE FROM dishes WHERE id = ? AND restaurant_id = ?'),
   insOrder: db.prepare('INSERT INTO orders (id, restaurant_id, time, data) VALUES (?, ?, ?, ?)'),
-  ordersFor: db.prepare('SELECT id, restaurant_id, time, data FROM orders WHERE restaurant_id = ? ORDER BY rowid')
+  ordersFor: db.prepare('SELECT id, restaurant_id, time, data FROM orders WHERE restaurant_id = ? ORDER BY rowid'),
+  ordById: db.prepare('SELECT id, restaurant_id, time, data FROM orders WHERE id = ?'),
+  updOrder: db.prepare('UPDATE orders SET data = ? WHERE id = ? AND restaurant_id = ?')
 };
 
 const dishFromRow = r => ({ ...JSON.parse(r.data), id: r.id, restaurantId: r.restaurant_id });
@@ -109,5 +111,12 @@ module.exports = {
   updateDish: d => q.updDish.run(JSON.stringify(d), d.id, d.restaurantId).changes,
   deleteDish: (id, rid) => q.delDish.run(String(id), rid).changes,
   insertOrder: o => q.insOrder.run(o.id, o.restaurantId, o.time, JSON.stringify(o)),
-  listOrders: rid => q.ordersFor.all(rid).map(orderFromRow)
+  listOrders: rid => q.ordersFor.all(rid).map(orderFromRow),
+  setOrderStatus: (id, rid, status) => {
+    const row = q.ordById.get(String(id));
+    if (!row || row.restaurant_id !== rid) return null;
+    const data = JSON.stringify({ ...JSON.parse(row.data), status });
+    q.updOrder.run(data, row.id, rid);
+    return orderFromRow({ ...row, data });
+  }
 };

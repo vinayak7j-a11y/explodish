@@ -568,3 +568,16 @@ body.scrolled .tabs{
 }
 .auth-hint{font-size:11px;color:var(--ink-inverse-soft);text-align:center;margin-top:12px;opacity:0.7;}
 #logoutTab svg{width:16px;height:16px;}
+
+/* Sold-out dishes */
+.dish-card.sold-out .dc-media { position: relative; }
+.dish-card.sold-out .dc-img,
+.dish-card.sold-out .dc-render { filter: grayscale(1); opacity: .5; }
+.dish-card.sold-out .dc-name,
+.dish-card.sold-out .dc-cat,
+.dish-card.sold-out .dc-cta { opacity: .6; }
+.dc-pill.dc-soldout {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 2; padding: 6px 14px; border-radius: 999px; white-space: nowrap;
+  background: #241C15; color: #FBF6E9; font-weight: 700; letter-spacing: .04em;
+}

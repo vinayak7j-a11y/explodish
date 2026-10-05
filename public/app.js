@@ -18,10 +18,29 @@ async function apiCreatePublicOrder(slug, order){
   const r = await fetch(`/api/r/${slug}/orders`, {
     method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(order)
   });
-  if(!r.ok) throw new Error('Failed to place order');
+  if(!r.ok){
+    const body = await r.json().catch(()=>({}));
+    const err = new Error(body.error || 'Failed to place order');
+    err.soldOut = body.soldOut;
+    throw err;
+  }
   return r.json();
 }
 
+async function apiSetOrderStatus(id, status){
+  const r = await fetch(`/api/orders/${id}/status`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status})
+  });
+  if(!r.ok) throw new Error('Failed to update order');
+  return r.json();
+}
+async function apiSetSoldOut(id, soldOut){
+  const r = await fetch(`/api/dishes/${id}/soldout`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({soldOut})
+  });
+  if(!r.ok) throw new Error('Failed to update dish');
+  return r.json();
+}
 async function apiMe(){
   const r = await fetch('/api/auth/me');
   if(!r.ok) return null;
@@ -518,11 +537,12 @@ function customerView(){
   </div>`;
 
   const cards = shown.map(d=>`
-    <div class="ticket dish-card" data-id="${d.id}">
+    <div class="ticket dish-card${d.soldOut ? ' sold-out' : ''}" data-id="${d.id}">
       <div class="dc-media">
         ${d.image ? `<img class="dc-img" src="${d.image}" loading="lazy" decoding="async" alt="">` : `<div class="dc-render">${renderExplodedStack(d, defaultQtyConfig(d), {compact:true})}</div>`}
         <span class="dc-pill dc-mode">${d.mode==='A' ? 'Layered' : 'Ingredient view'}</span>
         <span class="dc-pill dc-price">${fmt(d.basePrice)}</span>
+        ${d.soldOut ? '<span class="dc-pill dc-soldout">Sold out today</span>' : ''}
       </div>
       <div class="dc-body">
         ${d.category ? `<div class="dc-cat">${escapeHtml(d.category)}</div>` : ''}
@@ -733,7 +753,7 @@ function renderDetailOverlay(){
       </div>
       <div class="detail-footer">
         <div class="running-total"><span class="rt-label">Total</span><span id="runningTotal" class="rt-value${totalPulse?' pulse':''}">${fmt(total)}</span></div>
-        <button class="btn" id="addToCartBtn">Add to order</button>
+        ${dish.soldOut ? '<button class="btn" disabled>Sold out today</button>' : '<button class="btn" id="addToCartBtn">Add to order</button>'}
       </div>
     </div>
   `;
@@ -795,7 +815,7 @@ function renderDetailOverlay(){
   });
 
   renderDeltaFeed();
-  document.getElementById('addToCartBtn').addEventListener('click', addCurrentToCart);
+  const addBtnEl = document.getElementById('addToCartBtn'); if(addBtnEl) addBtnEl.addEventListener('click', addCurrentToCart);
 }
 
 function adjustQty(ing, dir){
@@ -1018,7 +1038,8 @@ async function placeOrder(){
     const saved = await apiCreatePublicOrder(PUBLIC_SLUG, order);
     ORDERS.push(saved);
   }catch(e){
-    toast('Could not reach the server — order not sent');
+    if(e.soldOut){ toast('Sorry, just sold out: ' + e.soldOut.join(', ') + '. Please remove it from your order.'); }
+    else { toast('Could not reach the server — order not sent'); }
     console.error(e);
     return;
   }
@@ -1044,9 +1065,10 @@ function ownerView(){
     <div class="dish-manage-row" data-id="${d.id}">
       ${d.image? `<img src="${d.image}">` : `<div class="ph"></div>`}
       <div style="flex:1;">
-        <div class="dname">${dietaryDotHtml(d)}${escapeHtml(d.name)}<span class="badge">${d.mode==='A'?'Layered':'Ingredient view'}</span></div>
+        <div class="dname">${dietaryDotHtml(d)}${escapeHtml(d.name)}<span class="badge">${d.mode==='A'?'Layered':'Ingredient view'}</span>${d.soldOut ? '<span class="badge" style="background:var(--rust);color:#fff;">Sold out</span>' : ''}</div>
         <div class="dmeta">${fmt(d.basePrice)} · ${d.ingredients.length} ingredients tagged</div>
       </div>
+      <button class="btn secondary small soldout-dish">${d.soldOut ? 'Mark available' : 'Mark sold out'}</button>
       <button class="btn secondary small edit-dish">Edit</button>
       <button class="btn secondary small delete-dish" style="color:var(--rust);">Delete</button>
     </div>
@@ -1378,6 +1400,23 @@ function attachOwnerHandlers(){
       renderAdmin();
     });
   });
+  document.querySelectorAll('.soldout-dish').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      const id = e.target.closest('.dish-manage-row').dataset.id;
+      const dish = DISHES.find(d=>d.id===id);
+      if(!dish) return;
+      btn.disabled = true;
+      try{
+        const updated = await apiSetSoldOut(id, !dish.soldOut);
+        dish.soldOut = !!updated.soldOut;
+        renderAdmin();
+        toast(dish.soldOut ? dish.name + ' is now marked sold out' : dish.name + ' is available again');
+      }catch(err){
+        toast('Could not update the dish — check your connection');
+        btn.disabled = false;
+      }
+    });
+  });
   document.querySelectorAll('.delete-dish').forEach(btn=>{
     btn.addEventListener('click', async (e)=>{
       const id = e.target.closest('.dish-manage-row').dataset.id;
@@ -1453,7 +1492,7 @@ function kitchenView(){
   })));
   const topIngredients = Object.entries(ingCount).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
-  const recentTickets = ORDERS.slice().reverse().slice(0,8).map(o=>`
+  const recentTickets = ORDERS.filter(o=>(o.status||'new')!=='done').slice().reverse().slice(0,12).map(o=>`
     <div class="ticket ticket-card">
       <div class="ticket-head"><span>${o.table ? `Table ${escapeHtml(String(o.table))} · ` : ''}Order ${o.id}</span><span>${new Date(o.time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</span></div>
       ${o.items.map(it=>`
@@ -1461,6 +1500,7 @@ function kitchenView(){
         ${it.mods.map(m=>`<div class="ticket-line tl-mod">— ${escapeHtml(m)}</div>`).join('')}
       `).join('')}
       <div class="ticket-line" style="text-align:right;font-weight:700;margin-top:6px;">${fmt(o.total)}</div>
+      ${statusControls(o)}
     </div>
   `).join('');
 
@@ -1498,4 +1538,47 @@ function kitchenView(){
     </div>
   `;
 }
-function attachKitchenHandlers(){}
+const ORDER_FLOW = {
+  new:       { label:'New',       next:'preparing', btn:'Start preparing' },
+  preparing: { label:'Preparing', next:'ready',     btn:'Mark ready' },
+  ready:     { label:'Ready',     next:'done',      btn:'Mark served' }
+};
+function statusControls(o){
+  const st = o.status || 'new';
+  const step = ORDER_FLOW[st];
+  return `<div class="ticket-status" style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;">
+    <span class="status-badge status-${st}" style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:999px;background:rgba(127,127,127,.2);">${step ? step.label : 'Done'}</span>
+    ${step ? `<button class="btn small status-btn" data-order="${escapeHtml(o.id)}" data-next="${step.next}">${step.btn}</button>` : ''}
+  </div>`;
+}
+let kitchenPoll = null;
+function startKitchenPoll(){
+  if(kitchenPoll) return;
+  kitchenPoll = setInterval(async ()=>{
+    if(activeTab!=='kitchen' || document.hidden) return;
+    try{
+      const r = await fetch('/api/orders');
+      if(!r.ok) return;
+      const fresh = await r.json();
+      const sig = a => a.map(o=>o.id+':'+(o.status||'new')).join('|');
+      if(sig(fresh)!==sig(ORDERS)){ ORDERS.length = 0; fresh.forEach(o=>ORDERS.push(o)); renderAdmin(); }
+    }catch(e){ /* offline: try again next tick */ }
+  }, 10000);
+}
+function attachKitchenHandlers(){
+  startKitchenPoll();
+  document.querySelectorAll('.status-btn').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      btn.disabled = true;
+      try{
+        const updated = await apiSetOrderStatus(btn.dataset.order, btn.dataset.next);
+        const idx = ORDERS.findIndex(x=>x.id===updated.id);
+        if(idx>=0) ORDERS[idx] = updated;
+        renderAdmin();
+      }catch(e){
+        toast('Could not update the order — check your connection');
+        btn.disabled = false;
+      }
+    });
+  });
+}

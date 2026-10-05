@@ -255,9 +255,23 @@ app.put('/api/dishes/:id', requireAuth, (req, res) => {
   const { error, dish } = sanitizeDish(req.body);
   if (error) return res.status(400).json({ error });
   dish.id = existing.id;
+  dish.soldOut = !!existing.soldOut; // only the sold-out switch changes this, never a normal edit
   dish.restaurantId = req.restaurantId;
   store.updateDish(dish);
   res.json(dish);
+});
+
+app.patch('/api/dishes/:id/soldout', requireAuth, (req, res) => {
+  const existing = store.getDish(req.params.id);
+  if (!existing || existing.restaurantId !== req.restaurantId) {
+    return res.status(404).json({ error: 'Dish not found' });
+  }
+  if (!req.body || typeof req.body.soldOut !== 'boolean') {
+    return res.status(400).json({ error: 'soldOut must be true or false' });
+  }
+  existing.soldOut = req.body.soldOut;
+  store.updateDish(existing);
+  res.json(existing);
 });
 
 app.delete('/api/dishes/:id', requireAuth, (req, res) => {
@@ -277,12 +291,33 @@ app.post('/api/r/:slug/orders', rateLimit(60, 10 * 60 * 1000), (req, res) => {
     return res.status(400).json({ error: 'Invalid order' });
   }
   const order = cleanValue(req.body, 0, { maxDepth: 8, maxStr: 500, maxArr: 200 });
+  // Refuse orders that contain a dish the owner has marked sold out.
+  const soldOutDishes = store.listDishes(restaurant.id).filter(d => d.soldOut);
+  if (soldOutDishes.length && Array.isArray(order.items)) {
+    const ids = new Set(soldOutDishes.map(d => d.id));
+    const names = new Set(soldOutDishes.map(d => d.name));
+    const blocked = [...new Set(order.items
+      .filter(it => it && (ids.has(it.dishId) || names.has(it.dishName)))
+      .map(it => it.dishName || 'an item'))];
+    if (blocked.length) return res.status(409).json({ error: 'Some items just sold out', soldOut: blocked });
+  }
   if (JSON.stringify(order).length > 60000) return res.status(413).json({ error: 'Order is too large' });
   order.id = uid();
   order.restaurantId = restaurant.id;
   order.time = new Date().toISOString();
+  order.status = 'new'; // always starts as new, whatever the client sent
   store.insertOrder(order);
   res.status(201).json(order);
+});
+
+app.patch('/api/orders/:id/status', requireAuth, (req, res) => {
+  const status = req.body && req.body.status;
+  if (!['new', 'preparing', 'ready', 'done'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+  const order = store.setOrderStatus(req.params.id, req.restaurantId, status);
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  res.json(order);
 });
 
 app.get('/api/orders', requireAuth, (req, res) => {
