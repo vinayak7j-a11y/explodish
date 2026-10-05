@@ -7,3 +7,4 @@ add_*.py
 fix_owner_ui.py
 apply_explodish_updates.sh
 *.patch
+*.bak
