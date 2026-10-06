@@ -107,10 +107,7 @@ const X = (name, unitPrice, allergens) => L(name, unitPrice, 2, allergens, { inc
 const EXPLODISH_TEMPLATES = [
   { key:'veg-burger', label:'Veg burger', mode:'A', dietary:'veg', category:'Burgers', ingredients:[
     L('Bun', 0, 1, ['Gluten','Sesame'], {mandatory:true}), L('Veg patty', 40, 2, ['Gluten']), L('Lettuce', 10, 2), L('Tomato', 10, 2),
-    L('Onion rings', 10, 2), L('Cheese slice', 20, 3, ['Dairy']), L('Mayo sauce', 10, 2, ['Egg']), X('Extra patty', 40, ['Gluten']), X('Jalapeños', 15) ] },
-  { key:'chicken-burger', label:'Chicken burger', mode:'A', dietary:'non-veg', category:'Burgers', ingredients:[
-    L('Bun', 0, 1, ['Gluten','Sesame'], {mandatory:true}), L('Chicken patty', 60, 2, ['Gluten','Egg']), L('Lettuce', 10, 2), L('Tomato', 10, 2),
-    L('Cheese slice', 20, 3, ['Dairy']), L('Mayo sauce', 10, 2, ['Egg']), X('Fried egg', 20, ['Egg']), X('Extra cheese', 20, ['Dairy']) ] },
+    L('Onion rings', 10, 2), L('Cheese slice', 20, 3, ['Dairy']), L('Eggless mayo sauce', 10, 2), X('Extra patty', 40, ['Gluten']), X('Jalapeños', 15) ] },
   { key:'paneer-wrap', label:'Paneer wrap', mode:'A', dietary:'veg', category:'Wraps', ingredients:[
     L('Wrap', 0, 1, ['Gluten'], {mandatory:true}), L('Paneer tikka', 40, 2, ['Dairy']), L('Onion', 5, 2), L('Capsicum', 5, 2),
     L('Mint chutney', 5, 2), X('Extra cheese', 20, ['Dairy']), X('Fries inside', 25) ] },
@@ -119,7 +116,7 @@ const EXPLODISH_TEMPLATES = [
     L('Green chutney', 5, 2), X('Extra cheese', 20, ['Dairy']), X('Corn', 15) ] },
   { key:'rice-bowl', label:'Rice bowl', mode:'A', dietary:'veg', category:'Bowls', ingredients:[
     L('Steamed rice', 20, 2, [], {mandatory:true}), L('Veg stir-fry', 30, 2, ['Soy']), L('Sauce', 10, 2, ['Soy']),
-    X('Paneer cubes', 40, ['Dairy']), X('Fried egg', 20, ['Egg']) ] },
+    X('Paneer cubes', 40, ['Dairy']) ] },
   { key:'paneer-curry', label:'Paneer curry', mode:'B', dietary:'veg', category:'Main course', ingredients:[
     {name:'Paneer', allergens:['Dairy']}, {name:'Tomato gravy', allergens:[]}, {name:'Cream', allergens:['Dairy']},
     {name:'Butter', allergens:['Dairy']}, {name:'Spices', allergens:[]}, {name:'Cashew paste', allergens:['Nuts']} ] },
@@ -129,8 +126,8 @@ const EXPLODISH_TEMPLATES = [
     {name:'Mixed vegetables', allergens:[]}, {name:'Vegetable stock', allergens:[]}, {name:'Black pepper', allergens:[]}, {name:'Butter', allergens:['Dairy']} ] },
   { key:'cold-drink', label:'Cold drink / shake', mode:'B', dietary:'veg', category:'Drinks', ingredients:[
     {name:'Fruit pulp', allergens:[]}, {name:'Milk', allergens:['Dairy']}, {name:'Sugar syrup', allergens:[]}, {name:'Ice', allergens:[]} ] },
-  { key:'biryani', label:'Biryani', mode:'B', dietary:'non-veg', category:'Main course', ingredients:[
-    {name:'Basmati rice', allergens:[]}, {name:'Chicken', allergens:[]}, {name:'Biryani masala', allergens:[]},
+  { key:'biryani', label:'Veg biryani', mode:'B', dietary:'veg', category:'Main course', ingredients:[
+    {name:'Basmati rice', allergens:[]}, {name:'Mixed vegetables', allergens:[]}, {name:'Biryani masala', allergens:[]},
     {name:'Fried onions', allergens:[]}, {name:'Yogurt marinade', allergens:['Dairy']} ] }
 ];
 /* ---- Allergen suggestions from ingredient names (free, no AI) ---- */
@@ -139,14 +136,10 @@ const ALLERGEN_RULES = [
             /\b(coconut|almond|soy|soya|oat|rice|cashew) (milk|cream|butter)\b|\b(peanut|cocoa|shea) butter\b|\bbutter beans?\b|\bdairy[- ]free\b/g],
   ['Gluten', /\b(bun|buns|bread|breads|wrap|wraps|roti|chapati|chapatti|naan|paratha|parantha|kulcha|bhatura|bhature|puri|pav|pasta|noodles?|spaghetti|macaroni|maida|atta|wheat|tortilla|toast|croutons?|breadcrumbs?|breaded|batter|semolina|suji|rava|sooji|couscous|barley|seitan|samosa|soy sauce|brioche|pita|baguette|croissant|pizza base|pizza dough)\b/,
             /\b(rice|corn|ragi|jowar|bajra|glass|soba|millet) (noodles?|pasta|roti|bread|wraps?|bun|buns)\b|\blettuce wraps?\b|\bgluten[- ]free\b/g],
-  ['Egg', /\b(eggs?|omelette|omelet|mayo|mayonnaise|aioli|anda|meringue)\b/,
-          /\begg[- ]free\b|\bvegan mayo(nnaise)?\b/g],
   ['Nuts', /\b(nuts?|cashews?|kaju|almonds?|badam|walnuts?|akhrot|pistachios?|pista|pecans?|hazelnuts?|macadamia|marzipan|praline|nutella)\b/,
            /\bnut[- ]free\b/g],
   ['Peanuts', /\b(peanuts?|groundnuts?|moongphali|mungfali|shengdana|satay)\b/, null],
   ['Soy', /\b(soy|soya|soybeans?|tofu|edamame|miso|tempeh)\b/, /\bsoy[- ]free\b/g],
-  ['Fish', /\b(fish|salmon|tuna|hilsa|pomfret|anchov(y|ies)|sardines?|cod|mackerel|surimi|rohu|basa|bombil|worcestershire)\b/, null],
-  ['Shellfish', /\b(prawns?|shrimps?|crabs?|lobsters?|squid|calamari|oysters?|mussels?|clams?|scampi|crayfish)\b/, /\boyster mushrooms?\b/g],
   ['Sesame', /\b(sesame|til|tahini|gingelly|hummus)\b/, null],
   ['Mustard', /\b(mustard|kasundi)\b/, /\bmustard (greens?|leaves)\b/g]
 ];
@@ -531,7 +524,7 @@ function customerView(){
   }</div>` : '';
 
   const dietPillsHtml = `<div class="category-bar filter-bar">
-    ${['All','Veg','Non-veg'].map(d=>`<button class="cat-pill diet-pill ${d===activeDietary?'active':''}" data-diet="${d}">${d==='All'?'All dishes':d}</button>`).join('')}
+    ${[].map(d=>`<button class="cat-pill diet-pill ${d===activeDietary?'active':''}" data-diet="${d}">${d==='All'?'All dishes':d}</button>`).join('')}
     <button class="cat-pill jain-pill ${jainOnly?'active':''}" id="jainToggle">Jain-friendly only</button>
     ${allAllergens.map(a=>`<button class="cat-pill allergen-pill ${excludedAllergens.has(a)?'active':''}" data-allergen="${escapeHtml(a)}">No ${escapeHtml(a)}</button>`).join('')}
   </div>`;
@@ -1095,8 +1088,6 @@ function ownerView(){
           <label>Dietary type</label>
           <select id="dishDietary">
             <option value="veg" ${ownerDraft.dietary==='veg'?'selected':''}>Veg</option>
-            <option value="egg" ${ownerDraft.dietary==='egg'?'selected':''}>Contains egg</option>
-            <option value="non-veg" ${ownerDraft.dietary==='non-veg'?'selected':''}>Non-veg</option>
           </select>
         </div>
         <div class="field">

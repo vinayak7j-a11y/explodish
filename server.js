@@ -122,6 +122,14 @@ function cleanValue(v, depth, o) {
   return undefined;
 }
 
+/* Explodish is vegetarian-only: reject anything that names meat, fish or egg. */
+const NONVEG_RE = /\b(chicken|mutton|lamb|beef|pork|bacon|ham|fish|prawns?|shrimps?|crabs?|lobsters?|squid|calamari|salmon|tuna|keema|kheema|eggs?|omelette|omelet|meat|sausages?|salami|pepperoni|gelatin|oysters?|mussels?|anchov(?:y|ies))\b/i;
+function nonVegWord(text) {
+  const t = String(text == null ? '' : text)
+    .replace(/egg[- ]?(free|less)|meat[- ]?(free|less)|oyster mushrooms?/gi, ' ');
+  const m = NONVEG_RE.exec(t);
+  return m ? m[0] : null;
+}
 const IMG_RE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/;
 function sanitizeDish(b) {
   if (!b || typeof b !== 'object' || Array.isArray(b)) return { error: 'Invalid dish' };
@@ -131,6 +139,11 @@ function sanitizeDish(b) {
   if (!Number.isFinite(basePrice) || basePrice <= 0 || basePrice > 100000) {
     return { error: 'name and basePrice are required (basePrice must be a positive number)' };
   }
+  if (b.dietary && b.dietary !== 'veg') return { error: 'Only vegetarian dishes can be added to Explodish' };
+  const badWord = [name, b.category]
+    .concat(Array.isArray(b.ingredients) ? b.ingredients.slice(0, 60).map(i => i && i.name) : [])
+    .map(nonVegWord).find(Boolean);
+  if (badWord) return { error: '"' + badWord + '" is not vegetarian. Explodish only allows vegetarian dishes.' };
   let image = null;
   if (b.image) {
     if (typeof b.image !== 'string' || b.image.length > 4500000 || !IMG_RE.test(b.image)) {
@@ -147,7 +160,7 @@ function sanitizeDish(b) {
       category: String(b.category || '').trim().slice(0, 40),
       image,
       removalRefund: !!b.removalRefund,
-      dietary: ['veg', 'non-veg', 'egg'].includes(b.dietary) ? b.dietary : 'veg',
+      dietary: 'veg',
       jainFriendly: !!b.jainFriendly,
       ingredients: Array.isArray(b.ingredients) ? cleanValue(b.ingredients, 0, lim) : [],
       modifiers: Array.isArray(b.modifiers) ? cleanValue(b.modifiers, 0, lim) : []
@@ -230,7 +243,7 @@ app.get('/api/r/:slug', (req, res) => {
 app.get('/api/r/:slug/dishes', (req, res) => {
   const restaurant = activeBySlug(req.params.slug);
   if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
-  res.json(store.listDishes(restaurant.id));
+  res.json(store.listDishes(restaurant.id).filter(d => !d.dietary || d.dietary === 'veg')); // hide any old non-veg dishes
 });
 
 app.get('/api/dishes', requireAuth, (req, res) => {
