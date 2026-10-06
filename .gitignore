@@ -8,3 +8,5 @@ fix_owner_ui.py
 apply_explodish_updates.sh
 *.patch
 *.bak
+make_*.py
+remove_*.js
