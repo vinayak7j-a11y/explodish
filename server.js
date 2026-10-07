@@ -295,6 +295,42 @@ app.delete('/api/dishes/:id', requireAuth, (req, res) => {
   res.json({ deleted: existing ? store.deleteDish(req.params.id, req.restaurantId) : 0 });
 });
 
+/* Works out what one cart item should cost from the saved menu. Mirrors the
+   price rules in the customer page. Returns null if the item doesn't fit the dish. */
+function priceItem(dish, it) {
+  if (!Array.isArray(it.config)) return null;
+  const choices = it.modifierChoices && typeof it.modifierChoices === 'object' ? it.modifierChoices : {};
+  const ings = Array.isArray(dish.ingredients) ? dish.ingredients : [];
+  let total = Number(dish.basePrice);
+  if (dish.mode === 'A') {
+    for (const ing of ings) {
+      const c = it.config.find(x => x && x.id === ing.id);
+      if (!c || !Number.isInteger(c.qty) || c.qty < 0) return null;
+      if (Number.isFinite(ing.maxQty) && c.qty > ing.maxQty) return null;
+      if (ing.mandatory && c.qty < 1) return null;
+      const diff = c.qty - (ing.included ? 1 : 0);
+      const unit = Number(ing.unitPrice) || 0;
+      total += diff >= 0 ? diff * unit : (dish.removalRefund ? diff * unit : 0);
+    }
+  } else {
+    for (let i = 0; i < ings.length; i++) {
+      const ing = ings[i];
+      if (!ing.swappable) continue;
+      const c = it.config.find(x => x && x.index === i);
+      if (!c) return null;
+      const opt = Array.isArray(ing.swapOptions) ? ing.swapOptions[c.swapChoice] : null;
+      if (opt) total += Number(opt.price) || 0;
+    }
+  }
+  for (const mod of dish.modifiers || []) {
+    if (!Array.isArray(mod.options) || !mod.options.length) continue;
+    const oi = choices[mod.id];
+    if (!Number.isInteger(oi) || oi < 0 || oi >= mod.options.length) return null;
+    total += Number(mod.options[oi].priceDelta) || 0;
+  }
+  return total;
+}
+
 /* ---------- Orders ---------- */
 
 app.post('/api/r/:slug/orders', rateLimit(60, 10 * 60 * 1000), (req, res) => {
@@ -304,6 +340,36 @@ app.post('/api/r/:slug/orders', rateLimit(60, 10 * 60 * 1000), (req, res) => {
     return res.status(400).json({ error: 'Invalid order' });
   }
   const order = cleanValue(req.body, 0, { maxDepth: 8, maxStr: 500, maxArr: 200 });
+  // The kitchen screen assumes a clean shape, so never store anything else.
+  if (!Array.isArray(order.items) || order.items.length === 0 || order.items.length > 50) {
+    return res.status(400).json({ error: 'Your order is empty' });
+  }
+  const itemsOk = order.items.every(it => it && typeof it.dishName === 'string' && it.dishName.trim() &&
+    Number.isFinite(it.price) && it.price >= 0 && it.price < 100000);
+  if (!itemsOk) return res.status(400).json({ error: 'One of the items in the order is invalid' });
+  order.items.forEach(it => {
+    it.mods = Array.isArray(it.mods) ? it.mods.filter(m => typeof m === 'string').slice(0, 30) : [];
+    it.deltas = Array.isArray(it.deltas)
+      ? it.deltas.filter(d => d && typeof d.label === 'string' && Number.isFinite(d.amount)).slice(0, 60)
+      : [];
+  });
+  order.total = order.items.reduce((s, it) => s + it.price, 0); // the server adds it up, not the phone
+  order.upsell = order.items.reduce((s, it) => s + it.deltas.reduce((a, d) => a + Math.max(d.amount, 0), 0), 0);
+  order.table = order.table == null || order.table === '' ? null : String(order.table).slice(0, 20);
+
+  // Re-price every item from the saved menu. The phone's price is never trusted.
+  const menu = new Map(store.listDishes(restaurant.id).map(d => [d.id, d]));
+  for (const it of order.items) {
+    const dish = typeof it.dishId === 'string' ? menu.get(it.dishId) : null;
+    const expected = dish ? priceItem(dish, it) : null;
+    if (expected === null || Math.abs(expected - it.price) > 0.01) {
+      return res.status(409).json({
+        code: 'menu_changed',
+        error: 'The menu changed while you were ordering. Please add your items again.'
+      });
+    }
+    it.dishName = dish.name; // use our own dish name, not the phone's
+  }
   // Refuse orders that contain a dish the owner has marked sold out.
   const soldOutDishes = store.listDishes(restaurant.id).filter(d => d.soldOut);
   if (soldOutDishes.length && Array.isArray(order.items)) {
@@ -331,6 +397,14 @@ app.patch('/api/orders/:id/status', requireAuth, (req, res) => {
   const order = store.setOrderStatus(req.params.id, req.restaurantId, status);
   if (!order) return res.status(404).json({ error: 'Order not found' });
   res.json(order);
+});
+
+/* A customer can check how their own order is going (no login; needs the order's random id). */
+app.get('/api/r/:slug/orders/:id/status', rateLimit(200, 10 * 60 * 1000), (req, res) => {
+  const restaurant = activeBySlug(req.params.slug);
+  const order = restaurant && store.getOrder(req.params.id);
+  if (!order || order.restaurantId !== restaurant.id) return res.status(404).json({ error: 'Order not found' });
+  res.json({ status: order.status || 'new' });
 });
 
 app.get('/api/orders', requireAuth, (req, res) => {

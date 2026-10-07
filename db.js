@@ -112,6 +112,7 @@ module.exports = {
   deleteDish: (id, rid) => q.delDish.run(String(id), rid).changes,
   insertOrder: o => q.insOrder.run(o.id, o.restaurantId, o.time, JSON.stringify(o)),
   listOrders: rid => q.ordersFor.all(rid).map(orderFromRow),
+  getOrder: id => { const r = q.ordById.get(String(id)); return r ? orderFromRow(r) : null; },
   setOrderStatus: (id, rid, status) => {
     const row = q.ordById.get(String(id));
     if (!row || row.restaurant_id !== rid) return null;

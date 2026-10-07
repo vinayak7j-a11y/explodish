@@ -22,6 +22,7 @@ async function apiCreatePublicOrder(slug, order){
     const body = await r.json().catch(()=>({}));
     const err = new Error(body.error || 'Failed to place order');
     err.soldOut = body.soldOut;
+    err.code = body.code;
     throw err;
   }
   return r.json();
@@ -99,7 +100,7 @@ function fmt(n){ return '₹' + Math.round(n).toLocaleString('en-IN'); }
 /* ---------------- app state ---------------- */
 let DISHES = [];
 let ORDERS = [];
-let CART = [];
+let CART = loadCart(); // restored from this phone if the page was refreshed
 let activeTab = 'owner'; // admin route only — 'owner' | 'kitchen'
 /* ---- Dish templates (free, no AI): pre-fill the owner form ---- */
 const L = (name, unitPrice, maxQty, allergens, o) => Object.assign({ name, included:true, mandatory:false, unitPrice, maxQty, allergens: allergens||[] }, o||{});
@@ -984,7 +985,8 @@ function addCurrentToCart(){
     const oi = modifierChoices[mod.id];
     if(oi !== 0) mods.push(`${mod.name}: ${mod.options[oi].label}`);
   });
-  CART.push({ dishName: dish.name, price: total, mods, deltas: deltas.filter(d=>!d.noChange) });
+  CART.push({ dishName: dish.name, price: total, mods, deltas: deltas.filter(d=>!d.noChange),
+    dishId: dish.id, config: config.map(c=>({...c})), modifierChoices: {...modifierChoices} });
   toast('Added to order');
   closeDetail();
   renderCartFab();
@@ -995,6 +997,7 @@ function addCurrentToCart(){
 }
 
 function renderCartFab(){
+  saveCart();
   const fab = document.getElementById('cartFab');
   if(CART.length===0){ fab.style.display='none'; hideCart(); return; }
   fab.style.display='block';
@@ -1020,7 +1023,19 @@ function toggleCartPanel(){
   document.getElementById('placeOrderBtn').addEventListener('click', placeOrder);
 }
 
+let placingOrder = false;
 async function placeOrder(){
+  if(placingOrder || !CART.length) return;
+  placingOrder = true;
+  const btn = document.getElementById('placeOrderBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Sending…'; }
+  try{ await placeOrderNow(); }
+  finally{
+    placingOrder = false;
+    if(btn && document.body.contains(btn)){ btn.disabled = false; btn.textContent = 'Place order'; }
+  }
+}
+async function placeOrderNow(){
   const order = {
     items: CART,
     total: CART.reduce((s,i)=>s+i.price,0),
@@ -1030,8 +1045,10 @@ async function placeOrder(){
   try{
     const saved = await apiCreatePublicOrder(PUBLIC_SLUG, order);
     ORDERS.push(saved);
+    if(saved && saved.id) trackMyOrder(saved.id);
   }catch(e){
     if(e.soldOut){ toast('Sorry, just sold out: ' + e.soldOut.join(', ') + '. Please remove it from your order.'); }
+    else if(e.code==='menu_changed'){ CART = []; renderCartFab(); toast(e.message); refreshMenu(); }
     else { toast('Could not reach the server — order not sent'); }
     console.error(e);
     return;
@@ -1412,6 +1429,7 @@ function attachOwnerHandlers(){
     btn.addEventListener('click', async (e)=>{
       const id = e.target.closest('.dish-manage-row').dataset.id;
       try{
+        if(!confirm('Delete "' + ((DISHES.find(d=>d.id===id)||{}).name || 'this dish') + '" for good?')) return;
         await apiDeleteDish(id);
         DISHES = DISHES.filter(d=>d.id!==id);
         renderAdmin();
@@ -1470,9 +1488,11 @@ async function saveDraft(){
    KITCHEN / DASHBOARD VIEW
    ========================================================= */
 function kitchenView(){
-  const totalOrders = ORDERS.length;
-  const totalRevenue = ORDERS.reduce((s,o)=>s+o.total,0);
-  const totalUpsell = ORDERS.reduce((s,o)=>s+o.upsell,0);
+  const todayStr = new Date().toDateString();
+  const todayOrders = ORDERS.filter(o=> new Date(o.time).toDateString()===todayStr);
+  const totalOrders = todayOrders.length;
+  const totalRevenue = todayOrders.reduce((s,o)=>s+o.total,0);
+  const totalUpsell = todayOrders.reduce((s,o)=>s+o.upsell,0);
 
   const ingCount = {};
   ORDERS.forEach(o=> o.items.forEach(it=> it.deltas.forEach(d=>{
@@ -1505,7 +1525,7 @@ function kitchenView(){
   return `
     <div class="section-card">
       <h3>Today at a glance</h3>
-      <div class="sc-desc">Live numbers from every order placed so far.</div>
+      <div class="sc-desc">Orders placed today, counted from midnight.</div>
       <div class="stat-grid">
         <div class="stat-box"><div class="stat-icon">${icons.orders}</div><div><div class="sv">${totalOrders}</div><div class="sl">Orders placed</div></div></div>
         <div class="stat-box"><div class="stat-icon">${icons.revenue}</div><div><div class="sv">${fmt(totalRevenue)}</div><div class="sl">Total revenue</div></div></div>
@@ -1573,3 +1593,93 @@ function attachKitchenHandlers(){
     });
   });
 }
+
+
+/* ---------- Customer conveniences: saved cart, order status, fresh menu ---------- */
+function cartSlug(){ const m = /^\/r\/([^\/?#]+)/.exec(location.pathname); return m ? m[1] : null; }
+function loadCart(){
+  try{
+    const slug = cartSlug(); if(!slug) return [];
+    const raw = JSON.parse(localStorage.getItem('explodish-cart:'+slug) || 'null');
+    if(!raw || Date.now() - raw.t > 12*3600*1000 || !Array.isArray(raw.items)) return [];
+    return raw.items.filter(i=> i && typeof i.dishName==='string' && Number.isFinite(i.price) && Array.isArray(i.mods) && Array.isArray(i.deltas) && typeof i.dishId==='string' && Array.isArray(i.config)).slice(0,50);
+  }catch(e){ return []; }
+}
+function saveCart(){
+  try{
+    const slug = cartSlug(); if(!slug) return;
+    if(CART.length) localStorage.setItem('explodish-cart:'+slug, JSON.stringify({ t:Date.now(), items:CART }));
+    else localStorage.removeItem('explodish-cart:'+slug);
+  }catch(e){}
+}
+
+var STATUS_TEXT = { new:'Order received', preparing:'Being prepared', ready:'Ready!', done:'Served. Enjoy your meal!' };
+var orderPoll = null;
+function ordersKey(){ return 'explodish-orders:' + cartSlug(); }
+function myOrders(){
+  try{ return JSON.parse(localStorage.getItem(ordersKey()) || '[]').filter(o=> Date.now()-o.t < 3*3600*1000).slice(-3); }
+  catch(e){ return []; }
+}
+function saveMyOrders(list){ try{ localStorage.setItem(ordersKey(), JSON.stringify(list.slice(-3))); }catch(e){} }
+function forgetOrder(id){ saveMyOrders(myOrders().filter(o=>o.id!==id)); }
+function showOrderBanner(id, status){
+  let b = document.getElementById('orderBanner');
+  if(!b){
+    b = document.createElement('div');
+    b.id = 'orderBanner';
+    b.setAttribute('role','status');
+    b.style.cssText = 'position:fixed;left:12px;right:12px;top:calc(env(safe-area-inset-top,0px) + 10px);z-index:9999;max-width:520px;margin:0 auto;padding:10px 14px;border-radius:12px;background:var(--paper);color:var(--ink);box-shadow:var(--lift-2);font:600 14px var(--font-body);display:flex;gap:10px;align-items:center;justify-content:space-between;';
+    document.body.appendChild(b);
+  }
+  b.textContent = '';
+  const t = document.createElement('span');
+  t.textContent = 'Order ' + id.slice(0,4).toUpperCase() + ' · ' + (STATUS_TEXT[status] || status);
+  const x = document.createElement('button');
+  x.type = 'button'; x.textContent = '✕'; x.setAttribute('aria-label','Dismiss');
+  x.style.cssText = 'border:0;background:transparent;color:inherit;font-size:16px;padding:4px 8px;';
+  x.addEventListener('click', ()=>{ forgetOrder(id); b.remove(); });
+  b.append(t, x);
+  b.dataset.until = status==='done' ? String(Date.now()+20000) : '0';
+}
+async function pollMyOrders(){
+  const slug = cartSlug(), list = myOrders();
+  const b = document.getElementById('orderBanner');
+  if(!slug || !list.length){ if(b && Number(b.dataset.until||0) < Date.now()) b.remove(); return; }
+  const last = list[list.length-1];
+  try{
+    const r = await fetch('/api/r/' + slug + '/orders/' + last.id + '/status');
+    if(r.status===404){ forgetOrder(last.id); return pollMyOrders(); }
+    if(!r.ok) return;
+    const data = await r.json();
+    showOrderBanner(last.id, data.status);
+    if(data.status==='done') forgetOrder(last.id);
+  }catch(e){ /* offline: try again next tick */ }
+}
+function startOrderPoll(){
+  if(orderPoll) return;
+  orderPoll = setInterval(()=>{ if(!document.hidden) pollMyOrders(); }, 8000);
+}
+function trackMyOrder(id){
+  const list = myOrders(); list.push({ id, t:Date.now() }); saveMyOrders(list);
+  startOrderPoll(); pollMyOrders();
+}
+
+async function refreshMenu(){
+  if(!cartSlug() || document.hidden) return;
+  try{
+    const fresh = await apiGetPublicDishes(PUBLIC_SLUG);
+    if(!fresh.length) return; // a failed request looks empty; keep what we have
+    const sig = a => JSON.stringify(a.map(d=>[d.id, d.name, d.basePrice, !!d.soldOut, d.image ? 1 : 0]));
+    if(sig(fresh) === sig(DISHES)) return;
+    DISHES = fresh;
+    if(!document.getElementById('closeDetail')) renderCustomerPage(); // don't disturb a dish someone is customising
+  }catch(e){}
+}
+function startCustomerBackground(){
+  if(!cartSlug()) return;
+  setInterval(refreshMenu, 45000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ refreshMenu(); pollMyOrders(); } });
+  if(myOrders().length){ startOrderPoll(); pollMyOrders(); }
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startCustomerBackground);
+else startCustomerBackground();
