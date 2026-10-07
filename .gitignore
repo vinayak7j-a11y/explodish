@@ -10,3 +10,4 @@ apply_explodish_updates.sh
 *.bak
 make_*.py
 remove_*.js
+batch*.py
