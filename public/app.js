@@ -1487,15 +1487,16 @@ async function saveDraft(){
 /* =========================================================
    KITCHEN / DASHBOARD VIEW
    ========================================================= */
-function kitchenView(){
+function kitchenView(){ return kitchenViewBase() + historyCard(); }
+function kitchenViewBase(){
   const todayStr = new Date().toDateString();
-  const todayOrders = ORDERS.filter(o=> new Date(o.time).toDateString()===todayStr);
+  const todayOrders = ORDERS.filter(o=> o.status!=='cancelled' && new Date(o.time).toDateString()===todayStr);
   const totalOrders = todayOrders.length;
   const totalRevenue = todayOrders.reduce((s,o)=>s+o.total,0);
   const totalUpsell = todayOrders.reduce((s,o)=>s+o.upsell,0);
 
   const ingCount = {};
-  ORDERS.forEach(o=> o.items.forEach(it=> it.deltas.forEach(d=>{
+  ORDERS.filter(o=>o.status!=='cancelled').forEach(o=> o.items.forEach(it=> it.deltas.forEach(d=>{
     if(d.amount>0){
       const key = d.label.replace(/^\+ /,'');
       ingCount[key] = (ingCount[key]||0)+1;
@@ -1503,7 +1504,7 @@ function kitchenView(){
   })));
   const topIngredients = Object.entries(ingCount).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
-  const recentTickets = ORDERS.filter(o=>(o.status||'new')!=='done').slice().reverse().slice(0,12).map(o=>`
+  const recentTickets = ORDERS.filter(o=>!['done','cancelled'].includes(o.status||'new')).slice().reverse().slice(0,12).map(o=>`
     <div class="ticket ticket-card">
       <div class="ticket-head"><span>${o.table ? `Table ${escapeHtml(String(o.table))} · ` : ''}Order ${o.id}</span><span>${new Date(o.time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</span></div>
       ${o.items.map(it=>`
@@ -1559,7 +1560,7 @@ function statusControls(o){
   const step = ORDER_FLOW[st];
   return `<div class="ticket-status" style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;">
     <span class="status-badge status-${st}" style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:999px;background:rgba(127,127,127,.2);">${step ? step.label : 'Done'}</span>
-    ${step ? `<button class="btn small status-btn" data-order="${escapeHtml(o.id)}" data-next="${step.next}">${step.btn}</button>` : ''}
+    <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">${step ? `<button class="btn small status-btn" data-order="${escapeHtml(o.id)}" data-next="${step.next}">${step.btn}</button><button class="btn secondary small cancel-btn" data-order="${escapeHtml(o.id)}">Cancel</button>` : ''}</span>
   </div>`;
 }
 let kitchenPoll = null;
@@ -1578,6 +1579,8 @@ function startKitchenPoll(){
 }
 function attachKitchenHandlers(){
   startKitchenPoll();
+  wireCancelButtons();
+  wireHistory();
   document.querySelectorAll('.status-btn').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       btn.disabled = true;
@@ -1613,7 +1616,7 @@ function saveCart(){
   }catch(e){}
 }
 
-var STATUS_TEXT = { new:'Order received', preparing:'Being prepared', ready:'Ready!', done:'Served. Enjoy your meal!' };
+var STATUS_TEXT = { new:'Order received', preparing:'Being prepared', ready:'Ready!', done:'Served. Enjoy your meal!', cancelled:'Order cancelled' };
 var orderPoll = null;
 function ordersKey(){ return 'explodish-orders:' + cartSlug(); }
 function myOrders(){
@@ -1638,8 +1641,17 @@ function showOrderBanner(id, status){
   x.type = 'button'; x.textContent = '✕'; x.setAttribute('aria-label','Dismiss');
   x.style.cssText = 'border:0;background:transparent;color:inherit;font-size:16px;padding:4px 8px;';
   x.addEventListener('click', ()=>{ forgetOrder(id); b.remove(); });
-  b.append(t, x);
-  b.dataset.until = status==='done' ? String(Date.now()+20000) : '0';
+  const parts = [t];
+  if(status==='new'){
+    const c = document.createElement('button');
+    c.type = 'button'; c.textContent = 'Cancel order';
+    c.style.cssText = 'border:1px solid currentColor;background:transparent;color:inherit;font-size:13px;padding:4px 10px;border-radius:8px;';
+    c.addEventListener('click', ()=> cancelMyOrder(id));
+    parts.push(c);
+  }
+  parts.push(x);
+  b.append(...parts);
+  b.dataset.until = (status==='done' || status==='cancelled') ? String(Date.now()+20000) : '0';
 }
 async function pollMyOrders(){
   const slug = cartSlug(), list = myOrders();
@@ -1652,7 +1664,7 @@ async function pollMyOrders(){
     if(!r.ok) return;
     const data = await r.json();
     showOrderBanner(last.id, data.status);
-    if(data.status==='done') forgetOrder(last.id);
+    if(data.status==='done' || data.status==='cancelled') forgetOrder(last.id);
   }catch(e){ /* offline: try again next tick */ }
 }
 function startOrderPoll(){
@@ -1683,3 +1695,67 @@ function startCustomerBackground(){
 }
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startCustomerBackground);
 else startCustomerBackground();
+
+
+/* ---------- Cancel orders, order history, CSV ---------- */
+function wireCancelButtons(){
+  document.querySelectorAll('.cancel-btn').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!confirm('Cancel this order? The kitchen will stop working on it.')) return;
+      btn.disabled = true;
+      try{
+        const updated = await apiSetOrderStatus(btn.dataset.order, 'cancelled');
+        const idx = ORDERS.findIndex(x=>x.id===updated.id);
+        if(idx>=0) ORDERS[idx] = updated;
+        renderAdmin();
+      }catch(e){ toast('Could not cancel the order — check your connection'); btn.disabled = false; }
+    });
+  });
+}
+async function cancelMyOrder(id){
+  if(!confirm('Cancel your order?')) return;
+  try{
+    const r = await fetch('/api/r/' + cartSlug() + '/orders/' + id + '/cancel', { method:'POST' });
+    if(r.status===409){ toast('Sorry, the kitchen has already started your order'); return pollMyOrders(); }
+    if(!r.ok){ toast('Could not cancel. Please ask the staff.'); return; }
+    showOrderBanner(id, 'cancelled'); forgetOrder(id);
+  }catch(e){ toast('Could not reach the server'); }
+}
+
+var historyRange = 'today';
+function rangeStart(r){
+  const d = new Date(); d.setHours(0,0,0,0);
+  if(r==='7d') d.setDate(d.getDate()-6);
+  else if(r==='30d') d.setDate(d.getDate()-29);
+  else if(r==='all') return null;
+  return d;
+}
+function historyCard(){
+  const start = rangeStart(historyRange);
+  const inRange = ORDERS.filter(o=> !start || new Date(o.time) >= start);
+  const valid = inRange.filter(o=>o.status!=='cancelled');
+  const revenue = valid.reduce((s,o)=>s+o.total,0);
+  const addons = valid.reduce((s,o)=>s+o.upsell,0);
+  const withAddon = valid.filter(o=>o.upsell>0).length;
+  const row = (k,v)=>`<div class="top-ing-row"><span class="ting-name">${k}</span><span class="ting-count">${v}</span></div>`;
+  const labels = { today:'Today', '7d':'Last 7 days', '30d':'Last 30 days', all:'All time' };
+  const href = '/api/orders.csv' + (start ? '?from=' + encodeURIComponent(start.toISOString()) : '');
+  return `
+    <div class="section-card">
+      <h3>Order history</h3>
+      <div class="sc-desc">Numbers for your records. Cancelled orders are not counted.</div>
+      <div class="category-bar">${Object.keys(labels).map(k=>`<button class="cat-pill hist-range ${k===historyRange?'active':''}" data-range="${k}">${labels[k]}</button>`).join('')}</div>
+      ${row('Orders', valid.length)}
+      ${row('Revenue', fmt(revenue))}
+      ${row('Average order', valid.length ? fmt(Math.round(revenue/valid.length)) : '–')}
+      ${row('Revenue from add-ons', fmt(addons))}
+      ${row('Orders with at least one add-on', valid.length ? Math.round(withAddon*100/valid.length)+'%' : '–')}
+      ${row('Cancelled orders', inRange.length - valid.length)}
+      <div style="margin-top:14px;"><a class="btn small" style="text-decoration:none;display:inline-block;" href="${href}" download>Download CSV</a></div>
+    </div>`;
+}
+function wireHistory(){
+  document.querySelectorAll('.hist-range').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ historyRange = btn.dataset.range; renderAdmin(); });
+  });
+}

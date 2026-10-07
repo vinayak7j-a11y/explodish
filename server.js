@@ -391,7 +391,7 @@ app.post('/api/r/:slug/orders', rateLimit(60, 10 * 60 * 1000), (req, res) => {
 
 app.patch('/api/orders/:id/status', requireAuth, (req, res) => {
   const status = req.body && req.body.status;
-  if (!['new', 'preparing', 'ready', 'done'].includes(status)) {
+  if (!['new', 'preparing', 'ready', 'done', 'cancelled'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
   }
   const order = store.setOrderStatus(req.params.id, req.restaurantId, status);
@@ -405,6 +405,47 @@ app.get('/api/r/:slug/orders/:id/status', rateLimit(200, 10 * 60 * 1000), (req, 
   const order = restaurant && store.getOrder(req.params.id);
   if (!order || order.restaurantId !== restaurant.id) return res.status(404).json({ error: 'Order not found' });
   res.json({ status: order.status || 'new' });
+});
+
+/* A customer can cancel their own order, but only before the kitchen starts it. */
+app.post('/api/r/:slug/orders/:id/cancel', rateLimit(30, 10 * 60 * 1000), (req, res) => {
+  const restaurant = activeBySlug(req.params.slug);
+  const order = restaurant && store.getOrder(req.params.id);
+  if (!order || order.restaurantId !== restaurant.id) return res.status(404).json({ error: 'Order not found' });
+  const status = order.status || 'new';
+  if (status === 'cancelled') return res.json({ status: 'cancelled' });
+  if (status !== 'new') return res.status(409).json({ error: 'The kitchen has already started this order' });
+  store.setOrderStatus(order.id, restaurant.id, 'cancelled');
+  res.json({ status: 'cancelled' });
+});
+
+/* Order history as a spreadsheet file. Optional ?from= and ?to= (ISO timestamps). */
+const REPORT_TZ = process.env.REPORT_TZ || 'Asia/Kolkata';
+function csvCell(v) {
+  let s = v == null ? '' : String(v);
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; // stops spreadsheet formulas typed by customers from running
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+app.get('/api/orders.csv', requireAuth, (req, res) => {
+  const from = req.query.from ? new Date(String(req.query.from)) : null;
+  const to = req.query.to ? new Date(String(req.query.to)) : null;
+  if ((from && isNaN(from)) || (to && isNaN(to))) return res.status(400).send('Invalid date');
+  const rows = store.listOrders(req.restaurantId)
+    .filter(o => (!from || new Date(o.time) >= from) && (!to || new Date(o.time) <= to));
+  const lines = [['Order ID', 'Date', 'Time', 'Table', 'Status', 'Items', 'Total (INR)', 'Add-on revenue (INR)'].map(csvCell).join(',')];
+  rows.forEach(o => {
+    const d = new Date(o.time);
+    const items = (o.items || []).map(it => it.dishName + (it.mods && it.mods.length ? ' (' + it.mods.join(', ') + ')' : '')).join(' | ');
+    lines.push([
+      o.id,
+      d.toLocaleDateString('en-CA', { timeZone: REPORT_TZ }),
+      d.toLocaleTimeString('en-GB', { timeZone: REPORT_TZ, hour12: false }),
+      o.table || '', o.status || 'new', items, o.total, o.upsell
+    ].map(csvCell).join(','));
+  });
+  res.set('Content-Type', 'text/csv; charset=utf-8');
+  res.set('Content-Disposition', 'attachment; filename="explodish-orders.csv"');
+  res.send('\ufeff' + lines.join('\r\n') + '\r\n');
 });
 
 app.get('/api/orders', requireAuth, (req, res) => {
