@@ -597,3 +597,6 @@ body.scrolled .tabs{
 .stack-disc .layer-img { position: absolute; left: 0; top: 50%; width: 100%; height: auto; transform: translateY(-50%); pointer-events: none; filter: drop-shadow(0 4px 4px rgba(0,0,0,.35)); }
 .detail-stack-stage { height: 200px; }
 .detail-stack-stage .stack-stage-inner { transform: scale(1.2); }
+
+/* Every dish is vegetarian, so the Dietary type dropdown is hidden */
+.field:has(#dishDietary) { display: none; }

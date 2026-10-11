@@ -406,7 +406,7 @@ function toast(msg){
    logic below — matchIngredientVisual() is the one seam that would change. */
 const INGREDIENT_VISUALS = {
   bun:    { keywords:['bun','bread','bagel','bap','roll','tortilla','wrap','naan'], top:'#ffdc9e', mid:'#e8a94f', deep:'#b8792c' },
-  patty:  { keywords:['patty','beef','chicken','mutton','lamb','fillet','tikka','kebab','sausage'], top:'#c9946a', mid:'#8a5a3c', deep:'#5c3c22' },
+  patty:  { keywords:['patty','tikki','tikka','kebab','cutlet','falafel'], top:'#c9946a', mid:'#8a5a3c', deep:'#5c3c22' },
   cheese: { keywords:['cheese','cheddar','mozzarella','swiss','gouda'], top:'#ffe27a', mid:'#e8b93c', deep:'#b88a1f' },
   leafy:  { keywords:['lettuce','greens','spinach','basil','mint','herb','coriander','methi','cilantro'], top:'#c3d888', mid:'#8aa34f', deep:'#5c7331' },
   tomato: { keywords:['tomato','marinara','capsicum','bell pepper'], top:'#f28b7a', mid:'#d8543f', deep:'#a13a28' },
@@ -1102,7 +1102,7 @@ function ownerView(){
         </div>
       </div>
       <div class="field-row" style="margin-top:16px;">
-        <div class="field"><label>Dish name</label><input type="text" id="dishName" value="${escapeHtml(ownerDraft.name)}" placeholder="e.g. Chicken Tikka Wrap"></div>
+        <div class="field"><label>Dish name</label><input type="text" id="dishName" value="${escapeHtml(ownerDraft.name)}" placeholder="e.g. Paneer Tikka Wrap"></div>
         <div class="field"><label>Category</label><input type="text" id="dishCategory" value="${escapeHtml(ownerDraft.category)}" placeholder="e.g. Wraps"></div>
       </div>
       <div class="field-row">
@@ -1158,7 +1158,7 @@ function ownerView(){
 
     <div class="section-card">
       <h3>4 · Modifiers <span style="font-weight:400;font-size:11.5px;color:var(--ink-soft);">(optional)</span></h3>
-      <div class="sc-desc">Non-ingredient choices like spice level, doneness, or portion size. The first option in each group is what customers start with by default.</div>
+      <div class="sc-desc">Non-ingredient choices like spice level or portion size. The first option in each group is what customers start with by default.</div>
       <div id="modifierList">${renderModifierGroups()}</div>
       <button class="btn btn-add small" id="addModifierBtn" style="margin-top:12px;">+ Add modifier group</button>
     </div>
@@ -1230,7 +1230,7 @@ function renderIngredientRowsA(){
 }
 function renderModifierGroups(){
   if(!ownerDraft.modifiers || ownerDraft.modifiers.length===0){
-    return '<div class="empty">No modifiers yet — e.g. spice level, portion size, doneness.</div>';
+    return '<div class="empty">No modifiers yet — e.g. spice level, portion size, sweetness.</div>';
   }
   return ownerDraft.modifiers.map((mod,mi)=>`
     <div class="modifier-group-edit" data-mi="${mi}">
