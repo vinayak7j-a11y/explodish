@@ -581,3 +581,19 @@ body.scrolled .tabs{
   z-index: 2; padding: 6px 14px; border-radius: 999px; white-space: nowrap;
   background: #241C15; color: #FBF6E9; font-weight: 700; letter-spacing: .04em;
 }
+
+/* Build level meter */
+.build-level { margin: 12px 0 4px; }
+.bl-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--brass-deep); }
+.bl-bar { height: 8px; border-radius: 999px; background: rgba(107,93,72,.18); overflow: hidden; margin-top: 6px; }
+.bl-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--brass-bright), var(--brass)); transition: width .45s cubic-bezier(.34,1.56,.64,1); }
+.bl-badge { padding: 2px 9px; border-radius: 999px; background: var(--moss); color: #fff; font-size: 10.5px; letter-spacing: .04em; }
+.bl-badge.pop { animation: badgePop .5s cubic-bezier(.34,1.56,.64,1); }
+
+/* Game-style stack layers (drawn by code; real images in /ingredients/ replace them) */
+.stack-disc { background: none !important; border-radius: 0 !important; box-shadow: none !important; }
+.stack-stage-inner .stack-disc { box-shadow: none !important; }
+.stack-disc .layer-art { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; display: block; pointer-events: none; filter: drop-shadow(0 3px 2px rgba(0,0,0,.30)); }
+.stack-disc .layer-img { position: absolute; left: 0; top: 50%; width: 100%; height: auto; transform: translateY(-50%); pointer-events: none; filter: drop-shadow(0 4px 4px rgba(0,0,0,.35)); }
+.detail-stack-stage { height: 200px; }
+.detail-stack-stage .stack-stage-inner { transform: scale(1.2); }

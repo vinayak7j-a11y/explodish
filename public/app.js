@@ -459,7 +459,7 @@ function renderExplodedStack(dish, config, opts){
   let y = 0;
   const discs = [];
   if(bunLayer){ discs.push({y, w, h:baseH+2, name:bunLayer.ing.name, id:bunLayer.ing.id, qty:1}); y += baseH*0.68; }
-  layers.forEach(x=>{ discs.push({y, w:w-8, h:midH, name:x.ing.name, id:x.ing.id, qty:x.qty}); y += midH*0.6; });
+  layers.forEach(x=>{ discs.push({y, w:w-8, h:midH, name:x.ing.name, id:x.ing.id, qty:x.qty}); y += midH*0.82; });
   if(bunLayer){ discs.push({y, w, h:baseH+2, name:bunLayer.ing.name, id:bunLayer.ing.id, qty:1}); y += baseH*0.68; }
   const totalH = y + baseH;
 
@@ -467,7 +467,7 @@ function renderExplodedStack(dish, config, opts){
   const inner = discs.map((L,i)=>{
     const v = INGREDIENT_VISUALS[matchIngredientVisual(L.name)];
     const badge = L.qty>1 ? `<span class="stack-badge">${L.qty}</span>` : '';
-    return `<div class="stack-disc ${draggable}" data-ing="${L.id}" style="--si:${i};top:${L.y}px;left:${(w-L.w)/2}px;width:${L.w}px;height:${L.h}px;background:radial-gradient(ellipse at 35% 25%, ${v.top}, ${v.mid} 55%, ${v.deep});">${badge}</div>`;
+    return `<div class="stack-disc ${draggable}" data-ing="${L.id}" style="--si:${i};top:${L.y}px;left:${(w-L.w)/2}px;width:${L.w}px;height:${L.h}px;">${layerArt(L, v, i, discs.length)}${badge}</div>`;
   }).join('');
 
   return `<div class="stack-wrap" style="height:${totalH}px;width:${w}px;">${inner}</div>`;
@@ -727,6 +727,7 @@ function renderDetailOverlay(){
   ` : '';
 
   const total = computeTotal();
+  const prevTotal = currentDetail.lastTotal;
   const totalPulse = currentDetail.lastTotal !== null && currentDetail.lastTotal !== total;
   currentDetail.lastTotal = total;
 
@@ -739,6 +740,7 @@ function renderDetailOverlay(){
         <button class="detail-close" id="closeDetail" aria-label="Close">✕</button>
         <div class="detail-title-row"><h2>${dietaryDotHtml(dish)}${escapeHtml(dish.name)}</h2></div>
         <div class="base-price-note">Base price ${fmt(dish.basePrice)}${dish.mode==='A' ? (dish.removalRefund? ' · removing an ingredient lowers the price' : ' · removing an ingredient does not change the price') : ''}</div>
+        ${dish.mode==='A' ? buildLevelHtml() : ''}
         <div class="section-label">${dish.mode==='A' ? 'Customise every layer' : "What's inside"}</div>
         ${bodyHtml}
         ${modifiersHtml}
@@ -810,6 +812,8 @@ function renderDetailOverlay(){
 
   renderDeltaFeed();
   const addBtnEl = document.getElementById('addToCartBtn'); if(addBtnEl) addBtnEl.addEventListener('click', addCurrentToCart);
+  animateTotal(prevTotal, total);
+  updateBuildLevel();
 }
 
 function adjustQty(ing, dir){
@@ -820,6 +824,7 @@ function adjustQty(ing, dir){
   const oldQty = c.qty;
   c.qty = newQty;
   currentDetail.bumpIngId = ing.id;
+  hapticTick();
   logQtyChange(ing, oldQty, newQty);
   if(newQty === 0 && oldQty > 0){
     cascadeDependents(ing);
@@ -1758,4 +1763,128 @@ function wireHistory(){
   document.querySelectorAll('.hist-range').forEach(btn=>{
     btn.addEventListener('click', ()=>{ historyRange = btn.dataset.range; renderAdmin(); });
   });
+}
+
+
+/* ---------- Game feel on the dish screen ---------- */
+/* Switch this to true after you add image files to public/ingredients/ (until then the
+   app skips looking for them, so there are no failed file requests). */
+var LAYER_IMAGES_ON = false;
+
+function hapticTick(){ try{ if(navigator.vibrate) navigator.vibrate(10); }catch(e){} }
+
+/* Level = how many different paid extras the customer has added (max 3 counted).
+   Dishes with no paid extras show no meter. Rebuilt on every render, so the
+   previous state is kept on currentDetail to know when to animate. */
+function buildLevelHtml(){
+  const { dish, config } = currentDetail;
+  const baseline = ing => ing.included ? 1 : 0;
+  const extras = dish.ingredients.filter(ing => ing.unitPrice > 0 && ing.maxQty > baseline(ing));
+  const goal = Math.min(3, extras.length);
+  if(!goal) return '';
+  const n = Math.min(goal, extras.filter(ing => { const c = config.find(x=>x.id===ing.id); return c && c.qty > baseline(ing); }).length);
+  const pct = Math.round(n / goal * 100);
+  const full = n === goal;
+  const top = goal >= 3 ? 'Mega Stack' : 'Fully loaded';
+  const label = n === 0 ? 'Classic' : (pct < 50 ? 'Tasty' : (full ? top : 'Loaded'));
+  const prevPct = currentDetail.levelPct == null ? pct : currentDetail.levelPct;
+  const pop = full && !currentDetail.levelWasFull;
+  currentDetail.levelPct = pct;
+  currentDetail.levelWasFull = full;
+  return `<div class="build-level" role="status" aria-label="Build level: ${label}">
+    <div class="bl-row"><span>Build level · ${label}</span>${full ? `<span class="bl-badge${pop ? ' pop' : ''}">★ ${top}</span>` : ''}</div>
+    <div class="bl-bar"><div class="bl-fill" data-to="${pct}" style="width:${prevPct}%"></div></div>
+  </div>`;
+}
+function updateBuildLevel(){
+  const fill = document.querySelector('#detailOverlay .bl-fill');
+  if(!fill) return;
+  void fill.offsetWidth; // let the browser register the starting width first
+  fill.style.width = fill.dataset.to + '%';
+}
+function animateTotal(from, to){
+  const el = document.getElementById('runningTotal');
+  if(!el || from === null || from === undefined || from === to) return;
+  if(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const t0 = performance.now(), dur = 350;
+  (function step(now){
+    if(!document.body.contains(el)) return;
+    const k = Math.min((now - t0) / dur, 1), eased = 1 - Math.pow(1 - k, 3);
+    el.textContent = k >= 1 ? fmt(to) : fmt(Math.round(from + (to - from) * eased));
+    if(k < 1) requestAnimationFrame(step);
+  })(t0);
+}
+
+
+/* ---------- Game-style stack layers, drawn by code ----------
+   Each layer is a small SVG picture that sits inside the same box the old flat
+   disc used, so tapping, dragging, the quantity badge and the cascade animation
+   all keep working. If a real image file exists in /ingredients/, it is shown
+   instead (see layerImgHtml). */
+var MISSING_IMG = {};
+var SESAME = [[22,8,-20],[38,5,10],[54,4,-5],[70,5,20],[86,8,-12],[46,11,15],[64,10,-20]];
+function hueOf(s){ let h = 0; for(const ch of String(s)) h = (h*31 + ch.charCodeAt(0)) % 360; return h; }
+function slugName(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
+
+function layerShape(key, c, role, name){
+  const M = '0 0 108 16', F = '0 0 110 20';
+  if(key==='bun' && role==='top'){
+    const seeds = /bun|brioche|burger/i.test(name)
+      ? SESAME.map(s=>`<ellipse cx="${s[0]}" cy="${s[1]}" rx="2.6" ry="1.3" fill="#fff4d8" transform="rotate(${s[2]} ${s[0]} ${s[1]})"/>`).join('') : '';
+    return [F, `<path d="M4 19Q3 3 55 1Q107 3 106 19Q55 23 4 19Z" fill="${c.mid}"/><path d="M12 14Q20 5 44 4" stroke="${c.top}" stroke-width="3" fill="none" stroke-linecap="round" opacity=".8"/><path d="M5 16Q55 22 105 16L106 19Q55 24 4 19Z" fill="${c.deep}" opacity=".55"/>${seeds}`];
+  }
+  if(key==='bun' && role==='bottom'){
+    return [F, `<path d="M4 2H106Q106 18 55 18Q4 18 4 2Z" fill="${c.mid}"/><path d="M10 5H100" stroke="${c.top}" stroke-width="2.5" stroke-linecap="round" opacity=".6"/><path d="M4 11Q55 20 106 11Q106 18 55 18Q4 18 4 11Z" fill="${c.deep}" opacity=".5"/>`];
+  }
+  const slab = `<rect x="4" y="2" width="100" height="12" rx="6" fill="${c.mid}"/><rect x="10" y="3.5" width="88" height="3" rx="1.5" fill="${c.top}" opacity=".6"/><rect x="4" y="10" width="100" height="4" rx="2" fill="${c.deep}" opacity=".45"/>`;
+  switch(key){
+    case 'patty':
+      return [M, `<rect x="3" y="1" width="102" height="14" rx="7" fill="${c.mid}"/><rect x="9" y="2.5" width="90" height="3.5" rx="1.7" fill="${c.top}" opacity=".55"/><rect x="3" y="10" width="102" height="5" rx="2.5" fill="${c.deep}" opacity=".55"/>`
+        + [[18,8],[34,10],[52,7],[70,10],[86,8],[96,10]].map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="1.4" fill="${c.deep}" opacity=".8"/>`).join('')];
+    case 'cheese':
+      return [M, `<path d="M2 2H106L102 8H90L85 15L79 8H7Z" fill="${c.mid}"/><path d="M6 4H100" stroke="${c.top}" stroke-width="2" stroke-linecap="round" opacity=".85"/>`];
+    case 'leafy':
+      return [M, `<path d="M2 8Q8 0 14 8T26 8T38 8T50 8T62 8T74 8T86 8T98 8T106 8L106 11Q100 17 94 11T82 11T70 11T58 11T46 11T34 11T22 11T10 11L2 11Z" fill="${c.mid}"/><path d="M6 8Q54 2 102 8" stroke="${c.top}" stroke-width="1.6" fill="none" opacity=".8"/>`];
+    case 'tomato':
+      return [M, `<ellipse cx="54" cy="8" rx="51" ry="7" fill="${c.mid}"/><ellipse cx="54" cy="6.2" rx="42" ry="3.6" fill="${c.top}" opacity=".55"/><ellipse cx="54" cy="11" rx="44" ry="3" fill="${c.deep}" opacity=".45"/>`];
+    case 'onion':
+      return [M, `<ellipse cx="26" cy="8" rx="21" ry="5.5" fill="none" stroke="${c.mid}" stroke-width="2.6"/><ellipse cx="54" cy="8.5" rx="23" ry="5.5" fill="none" stroke="${c.top}" stroke-width="2.6"/><ellipse cx="82" cy="8" rx="21" ry="5.5" fill="none" stroke="${c.mid}" stroke-width="2.6"/>`];
+    case 'pickle':
+      return [M, [18,40,64,88].map(x=>`<ellipse cx="${x}" cy="8" rx="11" ry="6" fill="${c.mid}" stroke="${c.deep}" stroke-width="1.2"/><ellipse cx="${x}" cy="7" rx="6" ry="2.6" fill="${c.top}" opacity=".5"/>`).join('')];
+    case 'sauce':
+      return [M, `<path d="M3 9Q12 2 24 9T48 9T72 9T104 8Q98 15 82 13T52 14T22 13Q8 15 3 9Z" fill="${c.mid}"/><ellipse cx="30" cy="7" rx="9" ry="2" fill="${c.top}" opacity=".6"/>`];
+    case 'paneer':
+      return [M, `<rect x="4" y="2" width="100" height="12" rx="3" fill="${c.mid}"/><rect x="4" y="2" width="100" height="4" rx="2" fill="${c.top}" opacity=".7"/><rect x="4" y="10" width="100" height="4" rx="2" fill="${c.deep}" opacity=".5"/><circle cx="26" cy="8" r="1.6" fill="${c.deep}" opacity=".35"/><circle cx="58" cy="9" r="1.4" fill="${c.deep}" opacity=".35"/><circle cx="84" cy="7.5" r="1.7" fill="${c.deep}" opacity=".35"/>`];
+    case 'cream':
+      return [M, `<path d="M4 9Q16 1 32 8T64 8T102 7Q96 15 70 13T30 14Q10 15 4 9Z" fill="${c.mid}"/><ellipse cx="40" cy="6.5" rx="12" ry="2.2" fill="${c.top}" opacity=".8"/>`];
+    default:
+      return [M, slab];
+  }
+}
+
+function layerImgHtml(L, key, role){
+  const kind = key==='bun' ? 'bun-' + (role==='top' ? 'top' : 'bottom') : key;
+  const files = [slugName(L.name) + '.webp', kind + '.webp']
+    .filter((f,i,a)=> f!=='.webp' && a.indexOf(f)===i && !MISSING_IMG[f]);
+  if(!files.length || !LAYER_IMAGES_ON) return '';
+  return `<img class="layer-img" src="/ingredients/${files[0]}" data-alts="${files.slice(1).join(',')}" alt="" draggable="false" onload="layerImgOk(this)" onerror="layerImgFail(this)">`;
+}
+function layerImgOk(el){ const art = el.previousElementSibling; if(art) art.style.visibility = 'hidden'; }
+function layerImgFail(el){
+  MISSING_IMG[el.getAttribute('src').split('/').pop()] = 1;
+  const alts = (el.dataset.alts || '').split(',').filter(Boolean);
+  if(alts.length){ el.dataset.alts = alts.slice(1).join(','); el.src = '/ingredients/' + alts[0]; }
+  else el.remove();
+}
+
+function layerArt(L, v, i, count){
+  const key = matchIngredientVisual(L.name);
+  let c = v;
+  if(key==='generic'){ // unknown ingredient: a colour picked from its name, so different things look different
+    const h = 18 + hueOf(L.name) % 130; // warm food colours: orange through green
+    c = { top:`hsl(${h} 60% 76%)`, mid:`hsl(${h} 50% 60%)`, deep:`hsl(${h} 45% 38%)` };
+  }
+  const role = key==='bun' ? (i===0 ? 'top' : (i===count-1 ? 'bottom' : 'slab')) : '';
+  const shape = layerShape(key, c, role, L.name);
+  return `<svg class="layer-art" viewBox="${shape[0]}" preserveAspectRatio="none" aria-hidden="true" focusable="false">${shape[1]}</svg>${layerImgHtml(L, key, role)}`;
 }
