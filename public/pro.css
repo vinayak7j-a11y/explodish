@@ -1,0 +1,111 @@
+/* Explodish pro layer. Everything is scoped to html.pro, which pro.js adds,
+   so adding ?classic to any address shows the original design. */
+html.pro { --pro-glass: rgba(35,27,22,.80); }
+
+@keyframes proRise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes proFlash {
+  0%, 100% { box-shadow: inset 6px 0 0 var(--rust), var(--lift-1); }
+  50% { box-shadow: inset 6px 0 0 var(--rust), 0 0 0 4px rgba(224,165,66,.7), var(--lift-3); }
+}
+
+/* ---- Tab bar: solid frosted glass, so content no longer shows through it ---- */
+.pro .pro-tabbar {
+  position: sticky; top: 12px; z-index: 60; padding: 6px; border-radius: 18px;
+  background: var(--pro-glass); -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3);
+  border: 1px solid var(--panel-line); box-shadow: 0 14px 34px -16px rgba(0,0,0,.7);
+}
+.pro .tab { border-radius: 13px; transition: background .25s, transform .15s, box-shadow .25s; }
+.pro .tab:active { transform: scale(.98); }
+.pro .tab.active { background: linear-gradient(160deg, var(--brass-bright), var(--brass)); color: #2A1B08; box-shadow: 0 6px 18px -6px rgba(224,165,66,.6), 0 1px 0 rgba(255,255,255,.35) inset; }
+
+/* ---- Cards, step badges, inputs, buttons ---- */
+.pro .section-card {
+  border-radius: 22px; border: 1px solid var(--panel-line);
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.012) 40%), var(--panel);
+  box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 24px 44px -28px rgba(0,0,0,.75);
+}
+.pro .section-card h3 { display: flex; align-items: center; }
+.pro .pro-step {
+  display: inline-grid; place-items: center; flex: none; width: 30px; height: 30px; margin-right: 12px; border-radius: 50%;
+  background: linear-gradient(155deg, var(--brass-bright), var(--brass-deep)); color: #2A1B08;
+  font: 700 15px var(--font-body); box-shadow: 0 4px 10px -3px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.4) inset;
+}
+.pro input[type=text], .pro input[type=number], .pro input[type=email], .pro input[type=password], .pro select, .pro textarea { transition: box-shadow .2s, border-color .2s; }
+.pro input:focus, .pro select:focus, .pro textarea:focus { outline: none; box-shadow: 0 0 0 3px rgba(224,165,66,.38); border-color: var(--brass); }
+.pro .btn { transition: transform .15s cubic-bezier(.34,1.56,.64,1), box-shadow .2s, filter .2s; }
+.pro .btn:hover { filter: brightness(1.07); }
+.pro .btn:active { transform: scale(.97); }
+.pro .mode-btn { position: relative; transition: transform .2s, box-shadow .25s, border-color .25s; }
+.pro .mode-btn:hover { transform: translateY(-2px); }
+.pro .mode-btn.selected { box-shadow: 0 0 0 3px rgba(224,165,66,.35), var(--lift-2); }
+.pro .mode-btn.selected::after {
+  content: "\2713"; position: absolute; top: 10px; right: 12px; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--brass); color: #2A1B08; display: grid; place-items: center; font-weight: 700; font-size: 13px;
+}
+.pro .empty {
+  border: 1.5px dashed rgba(244,235,211,.18); border-radius: 16px; padding: 34px 16px; text-align: center;
+  color: var(--ink-inverse-soft); background: radial-gradient(ellipse at 50% 0, rgba(224,165,66,.07), transparent 70%);
+}
+
+/* ---- Sticky Publish bar ---- */
+.pro .pro-actionbar {
+  position: sticky; bottom: 0; z-index: 40; display: flex; gap: 12px; align-items: center; margin-top: 18px; padding: 14px 6px 16px;
+  background: linear-gradient(0deg, rgba(35,27,22,.97) 62%, rgba(35,27,22,0));
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+
+/* ---- Drag to reorder layers ---- */
+.pro #ingredientList .ingredient-row { position: relative; padding-left: 40px; border-radius: 14px; transition: box-shadow .2s, background .2s; }
+.pro .pro-handle { position: absolute; left: 10px; top: 14px; width: 22px; text-align: center; font-size: 18px; line-height: 1; color: var(--brass); cursor: grab; user-select: none; touch-action: none; }
+.pro .pro-handle:active { cursor: grabbing; }
+.pro .pro-ghost { opacity: .35; }
+.pro .pro-chosen { box-shadow: var(--lift-3); }
+.pro .pro-fallback { opacity: .96; box-shadow: var(--lift-3); border-radius: 14px; background: var(--panel); }
+
+/* ---- Live preview beside the form (wide screens only) ---- */
+.pro .pro-preview { display: none; }
+@media (min-width: 1180px) {
+  .pro .pro-owner-grid { display: grid; grid-template-columns: minmax(0,1fr) 340px; column-gap: 28px; align-items: start; }
+  .pro .pro-owner-grid > * { grid-column: 1; }
+  .pro .pro-owner-grid > .pro-preview { grid-column: 2; grid-row: 1 / span 40; position: sticky; top: 104px; display: block; }
+}
+.pro .pro-preview {
+  padding: 18px; border-radius: 22px; border: 1px solid var(--panel-line);
+  background: linear-gradient(165deg, #33281f, #1a1310); box-shadow: var(--lift-2);
+}
+.pro .pp-label { font: 700 11px var(--font-body); letter-spacing: .12em; text-transform: uppercase; color: var(--brass-bright); }
+.pro .pp-stage { height: 300px; margin: 12px 0; border-radius: 16px; display: grid; place-items: center; overflow: hidden;
+  background: radial-gradient(ellipse at 50% 35%, rgba(224,165,66,.16), transparent 65%), rgba(0,0,0,.18); }
+.pro .pp-stack { transform: scale(1.7); transform-origin: center; }
+.pro .pp-img { width: 100%; height: 100%; object-fit: cover; }
+.pro .pp-hint { padding: 0 24px; text-align: center; color: var(--ink-inverse-soft); font-size: 14px; }
+.pro .pp-name { font: 600 22px var(--font-display); color: var(--ink-inverse); }
+.pro .pp-sub { margin-top: 4px; font-size: 13px; color: var(--ink-inverse-soft); }
+.pro .pp-tip { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--panel-line); font-size: 12px; color: var(--ink-inverse-soft); }
+
+/* ---- Customer menu: cards rise in, burgers tilt toward the mouse ---- */
+.pro .dish-card { border-radius: 20px; }
+@media (prefers-reduced-motion: no-preference) {
+  .pro .menu-grid .dish-card { animation: proRise .5s cubic-bezier(.16,1,.3,1) backwards; animation-delay: calc(var(--n, 0) * 45ms); }
+  .pro .dish-card .stack-wrap { transform: perspective(520px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) scale(1.15); transition: transform .18s ease-out; }
+}
+.pro .cat-pill { border-radius: 999px; transition: transform .15s, box-shadow .2s, background .2s; }
+.pro .cat-pill:active { transform: scale(.95); }
+
+/* ---- Kitchen: ticket grid, colour by status, big buttons, new-order flash ---- */
+.pro .pro-ticket-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.pro .pro-ticket-grid > .empty { grid-column: 1 / -1; }
+.pro .ticket-card { box-shadow: inset 6px 0 0 var(--rust), var(--lift-1); }
+.pro .ticket-card:has(.status-preparing) { box-shadow: inset 6px 0 0 var(--brass), var(--lift-1); }
+.pro .ticket-card:has(.status-ready) { box-shadow: inset 6px 0 0 var(--moss), var(--lift-1); }
+.pro .status-btn { min-height: 44px; font-size: 15px; }
+.pro .cancel-btn { min-height: 44px; }
+.pro .pro-flash { animation: proFlash 1.1s ease 3; }
+.pro .pro-sound {
+  position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 70;
+  border: 1px solid var(--panel-line); background: var(--pro-glass); color: var(--ink-inverse);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  border-radius: 999px; padding: 9px 16px; font-size: 13px; box-shadow: var(--lift-2);
+}
+.pro .pro-sound[hidden] { display: none; }
+.pro .ticket .btn.secondary { color: var(--ink); border-color: var(--paper-line); }
