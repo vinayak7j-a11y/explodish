@@ -1,13 +1,16 @@
-/* Explodish pro layer: polish on top of the existing app. Adding ?classic to any address switches it off. */
+/* Explodish pro layer v2: new look, motion, live preview, drag to reorder, confetti and kitchen alerts,
+   all on top of the existing app. Adding ?classic to any address switches it off. */
 (function () {
   'use strict';
   if (/[?&]classic(\b|=)/.test(location.search)) return;
-  document.documentElement.classList.add('pro');
+  var root = document.documentElement;
+  root.classList.add('pro');
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
   var reduced = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
-  var raf = null, observer = null;
+  var M = window.Motion || null;
+  var raf = null, observer = null, animateNext = true, lastTab = null;
 
   /* 1. Mark up containers whose class names we don't know in advance */
   function tag() {
@@ -32,7 +35,18 @@
     $$('.menu-grid .dish-card').forEach(function (c, i) { c.style.setProperty('--n', Math.min(i, 10)); });
   }
 
-  /* 2. Live preview of the dish being built (Owner tools, wide screens) */
+  /* 2. Hero: a small exploded burger that breathes in the header */
+  var HERO = ['Sesame bun', 'Veg patty', 'Cheese slice', 'Lettuce', 'Tomato', 'Onion rings', 'Pickles', 'Mint chutney'];
+  function hero() {
+    var m = $('.masthead');
+    if (!m || $('.pro-hero-art', m) || typeof renderExplodedStack !== 'function') return;
+    var ings = HERO.map(function (n, i) { return { id: 'h' + i, name: n }; });
+    var art = document.createElement('div'); art.className = 'pro-hero-art'; art.setAttribute('aria-hidden', 'true');
+    art.innerHTML = renderExplodedStack({ mode: 'A', ingredients: ings }, ings.map(function (i) { return { id: i.id, qty: 1 }; }), { compact: false });
+    m.appendChild(art);
+  }
+
+  /* 3. Live preview of the dish being built (Owner tools, wide screens) */
   function ownerOk() { return $('#dishName') && typeof ownerDraft !== 'undefined' && ownerDraft; }
   function mountPreview() {
     var grid = $('.pro-owner-grid');
@@ -47,7 +61,7 @@
     var p = $('.pro-preview');
     if (!p) {
       p = document.createElement('aside'); p.className = 'pro-preview';
-      p.innerHTML = '<div class="pp-label">Live preview</div><div class="pp-stage"></div><div class="pp-name"></div><div class="pp-sub"></div><div class="pp-tip">Drag the \u283f handle on a layer to reorder it. The top of the list is the top of the stack.</div>';
+      p.innerHTML = '<div class="pp-label">Live preview</div><div class="pp-stage"></div><div class="pp-name"></div><div class="pp-sub"></div><div class="pp-tip">Hover the preview to pull the layers apart. Drag the \u283f handle on a layer to reorder it; the top of the list is the top of the stack.</div>';
       grid.appendChild(p);
     } else if (p.parentElement !== grid) { grid.appendChild(p); }
     updatePreview();
@@ -74,7 +88,7 @@
     $('.pp-sub', p).textContent = (typeof fmt === 'function' ? fmt(price) : '\u20b9' + price) + ' \u00b7 ' + (d.category || 'No category yet') + ' \u00b7 ' + (d.mode === 'A' ? 'Exploded layers' : 'Ingredient view');
   }
 
-  /* 3. Drag to reorder layers (SortableJS) */
+  /* 4. Drag to reorder layers (SortableJS) */
   function sortables() {
     var list = $('#ingredientList');
     if (!list || typeof Sortable === 'undefined' || !ownerOk() || ownerDraft.mode !== 'A') return;
@@ -98,7 +112,39 @@
     });
   }
 
-  /* 4. Confetti when a customer reaches the top build level */
+  /* 5. Motion: cards rise in (new screens and filter changes only), numbers count up */
+  function tabKey() { var a = $('.tab.active'); return a ? (a.dataset.tab || 'tab') : (/^\/r\//.test(location.pathname) ? 'customer' : 'page'); }
+  function reveal() {
+    var targets = $$('.section-card, .menu-grid .dish-card, .pro-ticket-grid .ticket-card, .how-step').filter(function (e) { return !e.dataset.proIn; });
+    if (!targets.length) return;
+    targets.forEach(function (e) { e.dataset.proIn = '1'; });
+    if (!animateNext || !M || reduced) return;
+    animateNext = false;
+    var a = M.animate(targets, { opacity: [0, 1], transform: ['translateY(28px) scale(.985)', 'translateY(0px) scale(1)'] },
+      { delay: M.stagger(0.06), duration: 0.75, ease: [0.16, 1, 0.3, 1] });
+    var clean = function () { targets.forEach(function (e) { e.style.removeProperty('transform'); e.style.removeProperty('opacity'); }); };
+    if (a && a.finished) a.finished.then(clean, clean);
+  }
+  var counts = {};
+  function countUp() {
+    if (!M || reduced) return;
+    $$('.stat-box').forEach(function (box) {
+      var el = $('.sv', box), lab = $('.sl', box);
+      if (!el || !lab || el.dataset.proCount) return;
+      el.dataset.proCount = '1';
+      var m = /^(\D*)([\d,]+(?:\.\d+)?)(.*)$/.exec(el.textContent.trim()); if (!m) return;
+      var to = parseFloat(m[2].replace(/,/g, '')), key = lab.textContent.trim();
+      var from = Object.prototype.hasOwnProperty.call(counts, key) ? counts[key] : 0;
+      counts[key] = to;
+      if (from === to) return;
+      var grouped = m[2].indexOf(',') > -1;
+      M.animate(from, to, { duration: 0.9, ease: 'easeOut', onUpdate: function (v) {
+        var r = Math.round(v); el.textContent = m[1] + (grouped ? r.toLocaleString('en-IN') : r) + m[3];
+      } });
+    });
+  }
+
+  /* 6. Confetti when a customer reaches the top build level */
   function celebrate() {
     var b = $('.bl-badge.pop');
     if (!b || b._proDone) return;
@@ -107,10 +153,10 @@
     var r = b.getBoundingClientRect();
     confetti({ particleCount: 90, spread: 75, startVelocity: 38, ticks: 160, zIndex: 10050,
       origin: { x: (r.left + r.width / 2) / innerWidth, y: (r.top + r.height / 2) / innerHeight },
-      colors: ['#E0A542', '#C88A2E', '#5C7A50', '#F4EAD1', '#B3452A'] });
+      colors: ['#FFC857', '#F5A524', '#2FBF71', '#FFF1DC', '#FF5A36'] });
   }
 
-  /* 5. Kitchen: chime and flash when a new order arrives, with a mute switch */
+  /* 7. Kitchen: chime and flash when a new order arrives, with a mute switch */
   var seen = null, audio = null, soundOn = true;
   try { soundOn = localStorage.getItem('explodish-kitchen-sound') !== 'off'; } catch (e) {}
   function unlockAudio() {
@@ -157,10 +203,12 @@
     seen = ids; // an empty kitchen counts as "seen nothing", so the very first order still chimes
   }
 
-  /* 6. Burgers tilt toward the mouse on the customer menu */
+  /* 8. Pointer effects: burgers tilt on cards, the hero follows the mouse, buttons ripple */
   var tilted = null;
   document.addEventListener('pointermove', function (e) {
     if (e.pointerType !== 'mouse' || reduced) return;
+    root.style.setProperty('--px', ((e.clientX / innerWidth) - 0.5).toFixed(3));
+    root.style.setProperty('--py', ((e.clientY / innerHeight) - 0.5).toFixed(3));
     var c = e.target.closest && e.target.closest('.dish-card');
     if (tilted && tilted !== c) { tilted.style.removeProperty('--rx'); tilted.style.removeProperty('--ry'); tilted = null; }
     if (!c) return;
@@ -168,13 +216,36 @@
     var r = c.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
     c.style.setProperty('--ry', (x * 14).toFixed(1) + 'deg'); c.style.setProperty('--rx', (-y * 10).toFixed(1) + 'deg');
   }, { passive: true });
+  document.addEventListener('pointerdown', function (e) {
+    var b = e.target.closest && e.target.closest('.btn');
+    if (!b || reduced || b.disabled) return;
+    var r = b.getBoundingClientRect(), s = Math.max(r.width, r.height) * 2;
+    var d = document.createElement('span'); d.className = 'pro-ripple';
+    d.style.cssText = 'width:' + s + 'px;height:' + s + 'px;left:' + (e.clientX - r.left - s / 2) + 'px;top:' + (e.clientY - r.top - s / 2) + 'px';
+    b.appendChild(d); setTimeout(function () { d.remove(); }, 650);
+  }, { passive: true });
+  document.addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('.cat-pill, .diet-pill, .jain-pill, .allergen-pill')) animateNext = true;
+  }, true);
 
-  /* 7. Keep everything in step with the app, which redraws whole screens */
+  /* 9. Scroll progress bar */
+  var bar = document.createElement('div'); bar.className = 'pro-progress';
+  function onScroll() {
+    var h = document.documentElement, max = h.scrollHeight - innerHeight;
+    bar.style.transform = 'scaleX(' + (max > 0 ? Math.min(1, (window.scrollY || h.scrollTop) / max) : 0) + ')';
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll, { passive: true });
+
+  /* 10. Keep everything in step with the app, which redraws whole screens */
   function refresh() {
     raf = null;
     if (observer) observer.disconnect();
-    try { tag(); mountPreview(); sortables(); celebrate(); kitchen(); }
-    catch (e) { if (window.console) console.warn('pro layer:', e); }
+    try {
+      if (!bar.parentElement && document.body) document.body.appendChild(bar);
+      var k = tabKey(); if (k !== lastTab) { lastTab = k; animateNext = true; }
+      tag(); hero(); mountPreview(); sortables(); reveal(); countUp(); celebrate(); kitchen(); onScroll();
+    } catch (e) { if (window.console) console.warn('pro layer:', e); }
     if (observer) observer.observe(document.body, { childList: true, subtree: true });
   }
   function schedule() { if (!raf) raf = requestAnimationFrame(refresh); }
