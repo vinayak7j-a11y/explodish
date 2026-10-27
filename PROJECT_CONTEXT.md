@@ -1,451 +1,439 @@
-# Explodish — Project Context & Handoff
+# Explodish: Project Context & Handoff (v3, late Oct 2026)
 
-> Read this first in any new chat. It has the original idea, every decision
-> made since, the exact current state of the code, and everything still open.
-> This is the complete version; if you've seen an earlier copy of this file,
-> replace it with this one.
+> **Read this first in any new chat.** It replaces every older copy of this file.
+> It has the vision, the exact current state, how the code is organised, how
+> changes have been delivered, what is verified and what is NOT, and the
+> prioritised next steps. Where something is marked **UNVERIFIED**, it was built
+> and tested on stand-in files in a sandbox, but the owner has not confirmed it
+> on their real screen yet. Say so honestly; do not claim otherwise.
 
-## 0. Naming — resolved: "Explodish"
+---
 
-**Explodish** is the final name. The GitHub repo was already named this;
-the code still said **"Layer"** in the page `<title>`, the on-screen
-masthead text, `README.md`'s heading, and the server startup log — all of
-those have now been renamed to Explodish. "Layered" is kept as a plain
-English adjective describing Mode A's visual style (e.g. the "Layered"
-badge on a dish card) — that's a description, not the product name, so it
-wasn't touched.
+## 0. How to work with this person (important)
 
-No other renames pending. If this ever needs to change again, the full list
-of places the name shows up is: `public/index.html` (`<title>` + masthead
-`<h1>`), `README.md`'s heading, and the `console.log` in `server.js`.
+- The owner is on a **Mac**, **not experienced with the terminal**, and builds this
+  locally in `~/Downloads/menu-app`. Give **one command at a time, with the folder
+  stated**, and explain what each output means.
+- Preferred delivery: **copy-paste terminal blocks using `cat > file << 'EOF'`**,
+  and **content-matching Python patch scripts** that print `[OK]` / `[SKIP]` per
+  change (details in section 7). Never send a unified diff or line-number edits.
+- They get impatient when answers are long, when they are asked for the same thing
+  twice, or when a request is met with a plan instead of work. **Do the work, show
+  results, keep replies tight.** They said: "I already told you what to do."
+- They want **big, visible progress** ("crazy" design, advanced animation, real
+  food-like visuals) *and* a product that actually works for a restaurant.
+- **Attachments of code files from their Desktop failed once** (only screenshots
+  arrived). Screenshots work fine. For code, ask for `sed -n`/`grep`/`cat`
+  output pasted in chat, in chunks of ~100 lines, or ask them to retry attaching.
+- Your tool **cannot read their GitHub repo** (the repo page looks empty to the
+  fetch tool, and raw file URLs are refused unless the user pastes them).
+- **Sandbox resets happen.** Rebuild test rigs from section 8 instead of assuming
+  old `/tmp` folders exist.
+- Be straight about limits. Several times the "it's tested" claim only meant "tested
+  against stand-ins built from the exact code the user pasted".
 
-## 1. The core idea
+---
 
-Restaurants still mostly use static digital menus (QR → PDF or a plain list) —
-no transparency into what's in a dish, no real customization beyond talking to
-a waiter. This product is a digital menu where every dish is clickable and
-opens into one of two views:
+## 1. North star
 
-- **Mode A — Exploded layers.** For naturally "stackable" dishes (burgers,
-  wraps, sandwiches, bowls): shown opened up layer by layer. Customers add,
-  remove, or increase quantity per layer, with the bill updating live and a
-  per-action price delta shown (e.g. "+ ₹20 Extra cheese"), never just a
-  silently-updated total.
-- **Mode B — Ingredient view.** For dishes that aren't naturally layered
-  (curries, soups, drinks): full transparency on what's inside via tags/icons,
-  with limited swaps where the restaurant allows them (e.g. a mocktail's juice
-  base). No fake layering forced onto dishes that don't have layers.
+**Explodish is a digital restaurant menu where every dish is clickable and opens up.**
 
-**Evolution of the idea, in order** (for context on why it looks like this):
-1. Started as a full free-form 3D dish builder — dropped because rendering a
-   3D visual for every possible ingredient combination doesn't scale
-   (combinations multiply fast, technically expensive).
-2. Narrowed to the "exploded-layer" view (Mode A) — keeps the tactile
-   customization feel without procedural 3D rendering.
-3. Added Mode B for dishes that aren't naturally layered, rather than forcing
-   a fake layered look onto curries/soups/smoothies (would look artificial or
-   misleading about how the dish is actually made).
+- **Mode A, Exploded layers:** burgers, wraps, sandwiches, bowls. The dish is shown
+  layer by layer. Customers add/remove/increase quantity per layer; the bill updates
+  live; every price change is shown as a delta line ("+ ₹20 Extra cheese"), never
+  a silent total.
+- **Mode B, Ingredient view:** curries, soups, drinks. Full transparency about what
+  is inside (names, allergens). No fake layering.
+- **Owner onboarding speed is the real product:** target about 2 minutes per dish,
+  no design or technical skill. (Templates, allergen suggestions, live preview,
+  drag-to-reorder exist for this.)
+- **Vegetarian-only product** (decision made this chat): no non-veg, no egg.
+- **Look and feel goal:** the most delightful QR menu anyone has seen. Realistic,
+  appetising exploded food; spring animation; game-style feedback (build level,
+  Mega Stack, confetti); a bold, polished UI. Photoreal layer images are planned
+  (see 9.3); until then layers are drawn by code.
+- **Business reality:** a B2B SaaS tool, not a guaranteed consumer hit. The most
+  valuable next step is **one real restaurant using it for a day or a week** and
+  recording order value with vs without add-ons. Every further feature is a guess
+  until then. Remind the owner of this when they drift.
+- Differentiator vs Kabaq/PizzAR/QReal: customers break the dish apart and edit it
+  live, with transparent pricing.
 
-The **restaurant-onboarding tool** is considered the more important half of
-the product — the adoption bottleneck is how fast an owner can create these
-menu items, not the customer-facing polish. Target: upload a photo, tag
-ingredients, set pricing — about two minutes per dish, no design/technical
-skill required.
+---
 
-**Why the idea is considered solid** (reasoning, not just the pitch):
-- Technically buildable without exotic tech — no true 3D engine or
-  photogrammetry, just well-designed layered/icon visuals and a price
-  calculator.
-- Solves a real, provable problem: ordering food without knowing what's in
-  it, and today's customization being either absent or a clunky checklist.
-- Believable ROI pitch to restaurants: turns upselling ("extra cheese") into
-  a single tap instead of a verbal ask — a concrete average-order-value
-  lever, not just a "looks cool" pitch.
-- Differentiated from existing AR/3D menu tools (Kabaq, PizzAR, QReal) —
-  those show a static/rotating 3D view of a pre-made dish; almost none let a
-  customer break a dish apart and edit it live.
+## 2. Current state (what exists and works, by tests in a sandbox)
 
-**Honest limitations:**
-- This is realistically a **B2B SaaS/tool business**, not a guaranteed
-  hypergrowth consumer platform — comparable AR/3D menu players have mostly
-  stayed small, sold-as-add-on businesses. Expectation-setter, not a
-  dealbreaker.
-- The real bottleneck to watch is restaurant onboarding speed and adoption
-  willingness — not the customer-facing tech.
-- Needs real pilot evidence (1–2 real restaurants, actual before/after
-  order-value data) before assuming it scales or is fundable.
+### Platform / security
+- Multi-tenant: every restaurant has an isolated menu, orders, QR codes. `/admin`
+  login/register, `/r/:slug` public customer menu, `/` landing stub.
+- Auth: bcryptjs + JWT in an httpOnly cookie (30 days). `requireAuth` also checks the
+  restaurant exists and `active`.
+- **Storage moved from JSON files to SQLite** (`better-sqlite3`, `data/explodish.db`,
+  WAL). One-time automatic import of the old `data/*.json` when the DB is empty.
+- **JWT secret** must come from env. Dev default only works when `NODE_ENV` is not
+  `production`; production without a secret exits with FATAL. The real secret lives in
+  `.env` (git-ignored). Run with `node --env-file=.env server.js`.
+- Input hardening: body limit 100 kb (12 MB for `/api/dishes` after auth), dish and
+  order sanitisers (whitelists, depth/size caps, image data-URL regex), in-memory rate
+  limits, security headers, JSON-only error handler, CSV formula-injection guard.
+- **Server-side price verification:** every order item is re-priced from the saved
+  menu (see 4); a changed phone request cannot lower a price.
+- Public restaurant endpoint no longer leaks the owner's email.
 
-## 2. Where this stands right now
+### Owner side (`/admin` → Owner tools)
+- Dish form: photo (under 3 MB, JPG/PNG/GIF/WebP), name, category, Jain-friendly,
+  base price, removal rule (price stays / lowers), mode A/B, layers/ingredients,
+  modifier groups ("Make it yours"), publish/save/clear.
+- **Templates dropdown** (veg burger, paneer wrap, sandwich, rice bowl, paneer curry,
+  dal, soup, cold drink, veg biryani). **Keyword allergen suggestions** as you type a
+  layer name (Dairy, Gluten, Nuts, Peanuts, Soy, Sesame, Mustard; egg/fish/shellfish
+  removed). Owner edits always win.
+- Layer rules: price per extra unit, max qty, included by default, can't be removed,
+  "auto-remove if the customer removes X" dependency chips.
+- Dish list: Edit, Delete (asks first), **Mark sold out / Mark available**.
+- Table QR codes (`/api/qr`, printable grid, `?table=N`).
+- **Vegetarian only enforced:** the dietary dropdown is hidden; server rejects dishes
+  whose name/category/ingredient names contain meat/fish/egg words; old non-veg dishes
+  are hidden from customers; a cleanup script existed and was run.
+- **Pro layer (UNVERIFIED v2):** live preview of the exploded dish beside the form
+  (wide screens), drag-to-reorder layers (SortableJS), numbered step badges, sticky
+  Publish bar, frosted sticky tab bar.
 
-A **working local full-stack prototype** exists — not a mockup. It has been
-run end-to-end (fresh `npm install`, server started, every API route hit and
-verified with curl, data persistence confirmed) multiple times during
-development.
+### Customer side (`/r/:slug`)
+- Menu grid, category pills, Jain filter, "No <allergen>" chips (veg/non-veg pills
+  removed), dish cards with drawn exploded stack, table chip.
+- Open dish: layer steppers (+/−), **drag a stack layer down to remove / drag a row
+  up to add** (Pointer Events), modifiers, price-change feed, running total that
+  rolls up/down, **build-level meter** (Classic → Tasty → Loaded → Mega Stack, badge,
+  vibration tick), sold-out dishes show a disabled button.
+- Cart: **saved across refresh** (localStorage, 12 h), double-tap guard on Place
+  order, friendly errors ("just sold out", "menu changed").
+- After ordering: **live status banner** (Order received → Being prepared → Ready →
+  Served) polled every 8 s, with **Cancel order** while status is `new`.
+- Menu **refreshes itself** every 45 s and on tab focus (sold-out changes appear).
 
-**Stack** (deliberately boring, no build step):
-- Backend: Node.js + Express (`server.js`), one file, all routes in it.
-- Storage: flat JSON files (`data/dishes.json`, `data/orders.json`) via plain
-  `fs.readFileSync`/`writeFileSync`. First thing to swap for a real DB later —
-  only `server.js` touches these files, so it's a contained change.
-- Frontend: plain HTML/CSS/vanilla JS in `public/`, no framework, no bundler.
-  Talks to the backend via `fetch()` to `/api/dishes` and `/api/orders`.
+### Kitchen (`/admin` → Kitchen & dashboard)
+- Stats for **today only** (cancelled excluded): orders, revenue, add-on revenue,
+  dishes. Most-added extras. Tickets with status buttons (Start preparing → Mark
+  ready → Mark served), Cancel (confirm), 10 s auto-refresh.
+- **Order history** card: Today / 7 days / 30 days / All time, average order,
+  add-on revenue, share of orders with ≥1 add-on, cancelled count, **Download CSV**
+  (`REPORT_TZ`, default Asia/Kolkata).
+- Pro layer: ticket board with status-coloured edges, bigger buttons, new-order
+  flash + two-note chime, floating mute switch.
 
-**Run it:**
-```bash
-cd menu-app
-npm install
-npm start
+### Visual layer
+- **Game-style drawn layers** (SVG, by code) for buns (with sesame), patty, cheese,
+  lettuce, tomato, onion, pickle, sauce, paneer, cream; unknown ingredients get a
+  warm colour picked from the name. Same boxes as the old discs, so drag/tap/badge
+  still work.
+- **Real image override** (later): files in `public/ingredients/` named by ingredient
+  (`cheese-slice.webp`) or by kind (`bun-top.webp`, `bun-bottom.webp`, `patty.webp`,
+  `cheese.webp`, `leafy.webp`, `tomato.webp`, `onion.webp`, `pickle.webp`,
+  `sauce.webp`, `paneer.webp`, `cream.webp`). **Off by default:** set
+  `var LAYER_IMAGES_ON = true;` (near the end of `app.js`) once files exist.
+- **Pro design v2 (UNVERIFIED on the real app):** new palette via the app's own CSS
+  variables (espresso, ember, saffron, leaf), Fraunces + Inter fonts (self-hosted),
+  aurora background and grain, glass cards, gold-sheen heading, an animated exploded
+  burger in the header (desktop), Motion-powered card reveal and number count-up,
+  ripple on buttons, scroll-progress bar, card tilt on hover, confetti at Mega Stack.
+  Everything is scoped under `html.pro`; add **`?classic`** to any URL to see the old
+  design. Remove the three/four lines marked `explodish pro layer` in
+  `public/index.html` to switch it off permanently.
+
+---
+
+## 3. Stack and files
+
+Deliberately boring, **no build step**.
+
 ```
-Open `http://localhost:3000`.
-
-### File structure 
-
 menu-app/
-├── server.js # Express server + all API routes
-├── package.json
-├── PROJECT_CONTEXT.md # this file
-├── README.md
-├── data/
-│ ├── dishes.json # seed data: burger (Mode A), paneer curry + mocktail (Mode B)
-│ └── orders.json
-└── public/
-├── index.html
-├── styles.css # design system — see section 4
-└── app.js # all frontend logic: rendering, pricing engine, API calls
- 
+  server.js          Express: all routes, auth, sanitisers, rate limits, price check
+  db.js              SQLite storage layer + one-time legacy JSON import
+  package.json       deps: express, qrcode, bcryptjs, jsonwebtoken, cookie-parser,
+                     better-sqlite3, sortablejs, canvas-confetti, motion,
+                     @fontsource-variable/fraunces, @fontsource-variable/inter
+  .env               JWT_SECRET=...   (git-ignored; never paste in chat)
+  data/              explodish.db (+ legacy *.json, backups)  (git-ignored)
+  public/
+    index.html       shell (not fully seen by Claude; pro tags inserted before </head> / </body>)
+    app.js           ~2,500+ lines, ONE file, all three experiences
+    styles.css       base design system (dark counter, brass, paper tickets)
+    pro.css          pro design v2 layer
+    pro.js           pro behaviour v2 layer (observer-based, scoped to html.pro)
+    vendor/          Sortable.min.js, confetti.browser.js, motion.js
+    fonts/           fraunces-latin-wght-normal.woff2, inter-latin-wght-normal.woff2
+    ingredients/     (empty until real layer images exist)
+```
+
+- Run: `cd ~/Downloads/menu-app && node --env-file=.env server.js` → http://localhost:3000
+- URLs: `/admin` (owner), `/r/<slug>` (customer), `/r/<slug>?table=7`.
+- Dev demo account (only created when the DB is empty and not production):
+  `owner@demo.test` / `demo12345`, slug `demo-kitchen`. A real test account exists:
+  "Thakur ji ki rasoi" (slug shown in Owner tools → Table QR codes).
+- Repo: https://github.com/vinayak7j-a11y/explodish (public). Recent commits:
+  `843bd02` game-style layers + build level; `98f8f3b` veg wording cleanup;
+  `671fa9c` pro layer v1. **Pro design v2 (batch 6) was delivered but NOT yet
+  confirmed applied or committed.**
+- `.gitignore` includes: `node_modules/ .env data/ data-backup/ .DS_Store add_*.py
+  fix_owner_ui.py apply_explodish_updates.sh *.patch *.bak batch*.py make_*.py
+  remove_*.js`. One-off patch scripts are therefore never committed.
+
+---
+
+## 4. Data model, pricing, API
+
+### Tables (SQLite)
+- `restaurants(id, slug UNIQUE, name, email UNIQUE, password_hash, active, created_at)`
+- `dishes(id, restaurant_id, data JSON)`; `orders(id, restaurant_id, time, data JSON)`
+  (documents with an indexed restaurant_id; shapes below).
+
+### Dish document
+```json
+{ "id":"…", "restaurantId":"…", "name":"…", "mode":"A|B", "basePrice":189,
+  "category":"Burgers", "image":null | "data:image/…;base64,…",
+  "removalRefund":false, "dietary":"veg", "jainFriendly":false,
+  "soldOut":false,
+  "ingredients":[ {"id":"b1","name":"Sesame bun","included":true,"mandatory":true,
+                   "unitPrice":0,"maxQty":1,"allergens":["Gluten"],"requires":["id…"]} ],
+  "modifiers":[ {"id":"mod-spice","name":"Spice level",
+                 "options":[{"label":"Regular","priceDelta":0}]} ] }
+```
+Mode B ingredients: `{name, allergens, swappable, swapOptions:[{label,price}]}`
+(the owner form for B only edits name + allergens; swaps exist in the customer code
+and server price check but have no owner UI).
+`soldOut` is changed ONLY via `PATCH /api/dishes/:id/soldout`; normal edits keep it.
+
+### Order document
+```json
+{ "id":"…", "restaurantId":"…", "time":"ISO", "status":"new|preparing|ready|done|cancelled",
+  "table":"7"|null, "total":199, "upsell":20,
+  "items":[ { "dishName":"…", "price":199, "mods":["+1 Cheese slice"],
+              "deltas":[{"label":"+ Cheese","amount":20,"noChange":false}],
+              "dishId":"…", "config":[{"id":"b1","qty":1}] , "modifierChoices":{"mod-spice":0} } ] }
+```
+The server recomputes `total` (sum of item prices), `upsell` (sum of positive deltas),
+sets `status:'new'`, replaces `dishName` with the saved dish name.
+
+### Pricing rules (client `computeTotal` / `ingredientContribution`, mirrored by server `priceItem`)
+- `total = basePrice`
+- Mode A, each ingredient: `baseline = included ? 1 : 0; diff = qty − baseline`;
+  `diff ≥ 0` → `diff × unitPrice`; `diff < 0` → `removalRefund ? diff × unitPrice : 0`.
+- Mode B: `swappable` ingredients add `swapOptions[swapChoice].price`.
+- Modifiers: `options[modifierChoices[mod.id]].priceDelta` (index must be valid).
+- Server rejects (409 `menu_changed`) when the dish is missing/changed, qty is not an
+  integer, exceeds `maxQty`, removes a `mandatory` layer, or the price differs by >₹0.01.
+- Sold-out dishes: 409 `{error, soldOut:[names]}`.
 
 ### API
-| Method | Route            | Body                         | Notes                              |
-|--------|------------------|-------------------------------|--------------------------------------|
-| GET    | `/api/dishes`     | —                              | all dishes                          |
-| POST   | `/api/dishes`     | dish object (no `id`)          | server assigns `id`                 |
-| PUT    | `/api/dishes/:id` | full dish object               | replaces a dish                     |
-| DELETE | `/api/dishes/:id` | —                              | removes a dish                      |
-| GET    | `/api/orders`     | —                              | all orders                          |
-| POST   | `/api/orders`     | order object (no `id`/`time`)  | server assigns both                 |
+Public: `GET /api/r/:slug` · `GET /api/r/:slug/dishes` (veg only) ·
+`POST /api/r/:slug/orders` (rate-limited 60/10 min) ·
+`GET /api/r/:slug/orders/:id/status` · `POST /api/r/:slug/orders/:id/cancel` (only while `new`) ·
+`GET /api/qr?text=&size=`
+Auth: `POST /api/auth/register|login|logout`, `GET /api/auth/me`
+(login 10/15 min, register 10/h, per IP).
+Admin (cookie, always scoped to the logged-in restaurant):
+`GET|POST /api/dishes` · `PUT|DELETE /api/dishes/:id` ·
+`PATCH /api/dishes/:id/soldout` · `GET /api/orders` ·
+`PATCH /api/orders/:id/status` · `GET /api/orders.csv?from=&to=`
 
-### Data model
-```json
-{
-  "id": "seed-burger",
-  "name": "The Original Smash Burger",
-  "mode": "A",
-  "basePrice": 189,
-  "category": "Burgers",
-  "image": null,
-  "removalRefund": false,
-  "dietary": "non-veg",
-  "jainFriendly": false,
-  "ingredients": [
-    { "id": "b1", "name": "Sesame bun", "included": true, "mandatory": true,
-      "unitPrice": 0, "maxQty": 1, "allergens": ["Gluten"] }
-  ],
-  "modifiers": [
-    { "id": "mod-spice", "name": "Spice level",
-      "options": [{ "label": "Regular", "priceDelta": 0 }, { "label": "Spicy", "priceDelta": 0 }] }
-  ]
-}
-```
-Mode B ingredients skip `mandatory`/`maxQty`/`included` and instead use
-`swappable` + `swapOptions: [{ label, price }]`. `dietary` is `"veg"` /
-`"non-veg"` / `"egg"`. Any Mode-A ingredient can carry an optional
-`requires: [ingredientId]` array for dependency cascades (see section 4).
+Env: `JWT_SECRET` (required in production), `PORT`, `NODE_ENV`, `TRUST_PROXY`
+(set to 1 behind a proxy so rate limits are per customer), `REPORT_TZ`, `DB_FILE`.
 
-**Pricing engine logic** (the part worth re-reading before touching it):
-For an included ingredient, going above its default quantity charges
-`unitPrice` per extra unit, and reducing back down refunds that same amount —
-symmetric. But dropping *below* the included baseline (i.e. removing the
-ingredient entirely) only changes the price if the dish's `removalRefund` flag
-is true; otherwise it's logged as a "no price change" delta so the customer
-sees the rule was applied on purpose, not a bug. Mandatory ingredients can't
-go below quantity 1. Open product decision, restated from the original idea:
-many restaurants won't want to discount for removed items since it doesn't
-reduce their cost — but the rule needs to be visible to the customer to avoid
-disputes, which is why every price-affecting action logs a delta line rather
-than silently updating just the total.
+---
 
-### Features already built
-- **Menu tab**: category filter pills, dietary/Jain/allergen filter row (see
-  section 4), veg/non-veg/egg dot on every card → dish cards → detail overlay
-  → Mode A/B customization → dependency cascades → modifiers → live running
-  total + per-action delta feed → cart → place order. All of it now carries
-  the motion pass described in section 3.
-- **Owner tools tab**: photo upload (stored as base64 data URL — fine for a
-  prototype, not for production), name/category/dietary type/Jain flag/base
-  price, removal-price rule, Mode A/B choice, ingredient/layer builder (name,
-  per-unit price, max qty, mandatory, allergens, dependency chips), modifier
-  group builder, publish/edit/delete, list of published dishes. Form is split
-  into four numbered sections (Photo & basics / Pricing & view /
-  Layers-Ingredients / Modifiers) rather than one long form.
-- **Kitchen & dashboard tab**: every placed order renders as a kitchen ticket
-  (dish + modifications, not prose), plus stats: orders placed, total revenue,
-  revenue specifically from add-ons, most-added-extras leaderboard (ranked
-  list).
+## 5. Frontend map (`public/app.js`): names, not line numbers (lines have shifted)
 
-## 3. Design direction and its history
+Globals: `DISHES, ORDERS, CART, ownerDraft, currentDetail, activeTab, activeCategory,
+activeDietary (dead), CURRENT_TABLE, PUBLIC_SLUG, LAYER_IMAGES_ON, MISSING_IMG`.
 
-First pass was a plain cream/paper "ticket" aesthetic — felt flat, no depth.
-Second pass (current) moved to a warm dark charcoal counter background
-(`--bg:#231B16`) with brass/rust/moss accents and a **layered shadow system**
-(`--lift-1/2/3` — hard edge + soft throw + a hairline top sheen, reused
-everywhere so depth reads as one consistent material — paper lifted off a
-dark counter — rather than generic card shadows). Tabs became an icon'd
-segmented control; the owner form got split into numbered, visually
-separated sections; the dashboard got SVG icons per stat and a ranked list.
+- Rendering: `renderAdmin()` redraws the **whole admin shell** (masthead + tabs +
+  panel) on every structural change, so anything injected into it must be re-added
+  by an observer (pro.js does this). `renderCustomerPage()`, `ownerView()`,
+  `kitchenView()` → `kitchenViewBase()` + `historyCard()`.
+- Stack drawing: `INGREDIENT_VISUALS` (keywords → colours; note "mint chutney"
+  matches `leafy` because `leafy` comes before `sauce`), `matchIngredientVisual`,
+  `renderExplodedStack(dish, config, opts)` → `.stack-wrap` of `.stack-disc` boxes
+  (`--si` index, `data-ing`, `.draggable-disc`), each containing `layerArt()` →
+  `layerShape()` SVG; `layerImgHtml/layerImgOk/layerImgFail` handle real images.
+- Open dish: `openDetail`, `renderDetailOverlay` (rebuilds the overlay every change),
+  `adjustQty`, `logQtyChange`, `logDelta`, `renderDeltaFeed`, `attachDragHandlers`,
+  `cascadeDependents`, `addCurrentToCart`, `buildLevelHtml/updateBuildLevel/
+  animateTotal/hapticTick`.
+- Customer extras (end of file): `cartSlug, loadCart, saveCart, myOrders, trackMyOrder,
+  showOrderBanner, pollMyOrders, cancelMyOrder, refreshMenu, startCustomerBackground`.
+- Owner: `blankDraft`, `EXPLODISH_TEMPLATES`, `ALLERGEN_RULES/guessAllergens`,
+  `attachOwnerHandlers`, `saveDraft`, `renderIngredientRowsA/B`, `renderModifierGroups`.
+- Kitchen: `statusControls`, `ORDER_FLOW`, `startKitchenPoll`, `attachKitchenHandlers`,
+  `wireCancelButtons`, `wireHistory`, `historyRange`, `apiSetOrderStatus`.
+- API helpers: `apiGetPublicDishes, apiCreatePublicOrder, apiMe, apiLogin, apiDeleteDish,
+  apiSetSoldOut, apiSetOrderStatus` …
 
-**Was not good enough — confirmed by an actual screenshot review, now fixed.**
-With only the 3 seed dishes, the menu page read as sparse/unfinished: large
-empty gutter to the right of the cards (grid used `auto-fill`, which leaves
-phantom empty tracks when there are fewer items than would fill a row), and
-nothing to fill the page below the fold. Diagnosed fixes, **all shipped**:
-1. Changed `.menu-grid` from `grid-template-columns:repeat(auto-fill,...)` to
-   `repeat(auto-fit,...)` so existing cards stretch to fill the row instead of
-   leaving empty tracks.
-2. Added a category filter pill bar above the grid, built from each dish's
-   existing `category` field ("Burgers", "Curries", "Mocktails" today, plus
-   "All"). Filtering happens client-side in `customerView()` against an
-   `activeCategory` state variable — no new API needed.
-3. Added a short "how it works" 3-step strip below the grid (`howItWorksStrip()`
-   in `app.js`, `.how-strip` styles in `styles.css`) to use vertical space
-   intentionally and read as a finished product, not a cut-off page.
-4. Gave the "No photo yet" placeholder a line-icon (matches the existing
-   icon language used elsewhere) instead of bare text.
-5. Light density pass: dish cards now show their category as a small label
-   above the name; stat boxes get a hover lift consistent with dish cards.
-   The owner form's numbered sections already had per-section descriptions
-   and were judged dense enough as-is — left untouched.
+Known CSS classes/ids (from code Claude has seen): `.shell .masthead .mark .tag
+.table-chip .tab .tab.active .section-card .sc-desc .field .btn (.secondary .small
+.btn-add .file-btn) .mode-btn .ingredient-row .ing-name .stepper .layer-item
+.menu-grid .dish-card .dc-media .dc-render .dc-pill .dc-body .dc-name .dc-cat .dc-cta
+.cat-pill .how-strip .ticket .ticket-card .ticket-head .stat-grid .stat-box .sv .sl
+.top-ing-row .overlay .detail .detail-body .detail-footer .detail-stack-stage
+.running-total .rt-value .delta-feed .modifier-opt #cartFab #detailOverlay #runningTotal
+#dishName #ingredientList #saveDishBtn #placeOrderBtn #addToCartBtn #orderBanner`.
+CSS variables: `--bg --bg-glow --panel --panel-line --paper --paper-2 --paper-line
+--white --ink --ink-soft --ink-inverse --ink-inverse-soft --brass --brass-bright
+--brass-deep --rust --rust-deep --moss --moss-deep --font-display --font-body
+--font-num --lift-1/2/3`. **`html.pro` in pro.css overrides these**, which re-themes
+screens Claude has never seen.
 
-The "make it feel like a finished, professional product" pass is done —
-see section 4 for what's shipped since.
+**Pro layer mechanics (`pro.js`):** adds `html.pro`; a MutationObserver (disconnected
+while it edits, reconnected after) re-tags the tab bar (`.pro-tabbar`), action bar
+(`.pro-actionbar`), wraps tickets in `.pro-ticket-grid`, adds step badges, hero burger,
+live preview `aside.pro-preview` (grid `.pro-owner-grid`, ≥1180 px), Sortable handles,
+reveal/count-up via `Motion`, confetti on `.bl-badge.pop`, kitchen chime/flash, tilt,
+ripple, scroll bar. Reveal animates only when the screen/tab changes or a filter pill is
+clicked, and removes Motion's inline `opacity/transform` afterwards (otherwise hover
+effects break).
 
-**Motion & interaction pass (shipped).** The static version worked but felt
-inert — nothing acknowledged a tap, price changes just appeared. Rather than
-scatter fade-and-slide-up entrances on every element (the generic default
-that reads as templated), motion was deliberately concentrated in one place
-and otherwise kept to responses that answer an actual action:
-- **The one signature moment**: opening a Mode A dish's detail view triggers
-  the layers cascading into place with a slight offset — literally an
-  "exploded" reveal, tied to what the product is named after. Mode B
-  ("ingredient view") gets a plain fade instead, since it isn't exploded and
-  shouldn't pretend to be. This only plays on the *first* open of a dish;
-  every subsequent re-render while customizing (stepper clicks, swaps,
-  modifier changes) reuses the same overlay state instantly, so adjusting an
-  ingredient never re-triggers the whole sheet sliding up again.
-- **Price feedback, since that's the actual point of the app**: the running
-  total does a quick scale-pulse whenever a change actually moves the price
-  (not on every render — compared against the previous total each time), the
-  specific ingredient's quantity number gets a small pop, and the newest
-  delta-feed row slides in from the right while older rows stay static. All
-  three only fire in response to the customer's own tap.
-- **Small tactile confirmations**: stepper/modifier buttons compress
-  slightly on press, the cart FAB does a one-time bounce when something is
-  added, and the cart panel's line items stagger in when it's opened.
-- **Everything else stayed quiet**: no scroll-triggered reveals, no
-  decorative motion on load. The tab switcher is sticky (with a
-  backdrop-blur state once actually scrolled) so it stays reachable on a
-  long page — a usability decision, not a flourish.
-- **Baseline hygiene alongside the above**: `prefers-reduced-motion` is
-  respected globally (durations collapse to near-zero), focus-visible
-  states are defined for keyboard navigation, dish/detail images lazy-load
-  and fade in once actually loaded instead of popping in, and Escape closes
-  the open detail overlay. Toasts now stack in a dedicated container instead
-  of overlapping if more than one fires in quick succession.
+---
 
-Verified with a headless DOM simulation (jsdom) driving real clicks through
-the actual `app.js` — confirmed the cascade plays once and only once per
-dish, the pulse only fires on an actual price change, the qty-bump targets
-only the ingredient that changed (not the whole list), and no runtime
-errors surface across the open → adjust → add-to-cart → open-cart flow.
+## 6. Build history (in order; all delivered as paste-in patches)
 
-**Auto-rendered ingredient visuals (shipped) — replaces the flat "No photo
-yet" placeholder.** The placeholder from the fix above worked, but every
-dish without a photo still looked identical and static. What's there now
-instead, for any Mode A dish without an uploaded photo:
-- A small hand-built library of glossy CSS-rendered ingredient "discs"
-  (`INGREDIENT_VISUALS` in `app.js`) — bun, patty, cheese, leafy greens,
-  tomato, onion, pickle, sauce, paneer, cream, and a generic fallback.
-  `matchIngredientVisual()` keyword-matches whatever the owner actually
-  typed (`"Cheddar cheese"` → cheese, `"Jalapeño"` → falls through to
-  generic) — nothing new for the owner to fill in.
-- `renderExplodedStack()` turns a dish's *current* ingredient state into a
-  literal stack of these discs — a matched bun renders as both the bottom
-  and top cap, everything else stacks between in array order, and anything
-  at qty>1 gets a small count badge instead of duplicate discs. It's fully
-  derived from live state, so it's used in three places with zero
-  synchronization code: the menu card (compact, default quantities), the
-  detail overlay's hero area (full-size, live), and it just re-renders
-  correctly every time `renderDetailOverlay()` re-runs after a stepper
-  click, a cascade removal, or a swap.
-- Mode B dishes aren't "layered" by definition, so `renderModeBIcon()` gives
-  them a simple bowl or glass icon instead (matched from dish category/name
-  — "mocktail"/"cooler"/etc. → glass, everything else → bowl) rather than
-  forcing the stack metaphor onto something that isn't stacked.
-- A dish's own uploaded photo (if the owner adds one) always wins over the
-  auto-render, on both the card and in the detail view — this system only
-  fills the gap when there's nothing else to show.
-- **Deliberately not photography.** This is original CSS/SVG artwork, not
-  real food images — the honest reasoning: real photos pulled from a web
-  search aren't licensed for use in a real product, and true photorealism
-  (real licensed photos via an API like Unsplash/Pexels, or AI-generated
-  images) is a genuinely bigger decision — an external dependency, a cost
-  model, and in the AI case an ongoing per-image charge — that hasn't been
-  made yet. The code is structured so `matchIngredientVisual()` is the one
-  seam that would need to change to swap in real photos per ingredient
-  later (fetched once per unique name, cached, reused everywhere) without
-  touching the stacking/layout logic at all.
-- Verified with the same jsdom approach: disc counts match expected
-  ingredient state exactly (including the bun double-render and the
-  dependency-cascade case), the quantity badge appears only on the changed
-  ingredient, and both Mode B icon variants render correctly — all with
-  zero runtime errors across open → adjust → remove.
+1. Naming → Explodish; section-3-era UI fixes; ingredient dependency rules; modifiers;
+   veg/Jain/allergen filters; motion pass; CSS auto-rendered ingredient discs; table
+   QR; drag-and-drop; multi-tenant accounts; owner-tools UI visibility fixes.
+2. Chat 2 (this handoff's chat): JWT secret guard + `.env`; templates (`add_templates.py`);
+   allergen suggestions (`add_allergen_tagging.py`); GitHub push hygiene; **SQLite +
+   security hardening (`db.js`, new `server.js`)**; kitchen order status (`add_order_status.py`);
+   sold-out toggle (`add_soldout.py`); veg-only (`make_veg_only.py`, `remove_nonveg_dishes.js`);
+   **batch 1** (order validation, saved cart, double-tap guard, order banner, fresh menu,
+   delete confirm, today stats); **batch 1b** (server price check); **batch 3** (cancel,
+   order history, CSV); **batch 2** (game-style drawn layers); **batch 2b** (build
+   level, count-up total, haptic, `LAYER_IMAGES_ON`); **batch 4** (veg wording cleanup,
+   hide dietary dropdown); **batch 5** (pro layer v1: libs + index.html tags); **batch 6**
+   (pro v2: Motion, fonts, new palette, hero; `pro.css`/`pro.js` overwritten).
+3. Owner guide (HTML artifact, updated through batch 3):
+   https://claude.ai/artifact/W4XjSwoDWjuXZ8KRAo8oca (does not yet mention game
+   layers, build level or the pro design).
 
-## 4. Known gaps and edge cases (not yet handled)
+---
 
-**Structural/pricing:**
-- No accounts / multi-restaurant support — one shared menu right now. Needs a
-  `restaurantId` on dishes/orders plus a login layer.
-- No real database — JSON files are fine for a pilot, not concurrent writes
-  at scale. Schema maps ~1:1 to a Postgres/SQLite table.
-- Ingredient dependency rules **shipped**: layers get an optional `requires`
-  array of other ingredient ids; removing a layer auto-removes anything that
-  `requires` it (cascades through chains), logs a delta line explaining why,
-  and leaves `mandatory` layers alone since those can't be removed by any
-  path. Owner tool exposes this as toggleable chips per layer ("Auto-remove
-  this layer if the customer removes: ..."). Seed data has a live example —
-  the burger's "Cheese sauce drizzle" `requires` "Cheddar cheese".
-- Non-ingredient modifiers **shipped**: dishes can carry a `modifiers` array
-  (`{ id, name, options: [{label, priceDelta}] }`), independent of Mode A/B,
-  shown in the detail overlay as a "Make it yours" button group, first
-  option is the default a customer starts with. Owner tool has a 4th form
-  section to add/edit modifier groups and their options. Seed data has two
-  examples: "Spice level" on the burger, "Portion size" on the curry. Still
-  open: no per-modifier availability rules (e.g. "Large" only for certain
-  dishes) beyond just not adding the option — not needed yet.
-- No GST/tax-on-delta handling, no combo/thali pricing interaction logic
-  (what happens when a customer customizes an item that's part of a
-  fixed-price combo?).
-- No handling for fraud/misuse of the no-refund-on-removal rule (e.g.
-  removing many ingredients hoping for an unintended discount).
-- No order cancellation/edit flow after submission.
+## 7. Delivery conventions (keep using these)
 
-**Kitchen/operations:**
-- No POS/KDS integration — orders just sit in `orders.json`. Real deployment
-  needs to push orders to the restaurant's existing kitchen display/POS
-  (Petpooja, Posist are the big ones in India).
-- No ingredient stockout / "86 this ingredient" toggle — if the kitchen runs
-  out mid-service, there's no way to pull that layer from the live menu.
-  instantly.
-- No kitchen-complexity throttle — nothing lets a restaurant temporarily
-  disable deep customization during a rush (200-cover Saturday night
-  scenario).
-- No multi-outlet/chain support — templated dishes across branches with
-  local pricing overrides aren't modeled.
-- No offline/poor-connectivity handling — no PWA caching strategy for
-  restaurant wifi that drops.
+- **Patch scripts:** `python3 batchN.py`, run from `menu-app`. Helper:
+  `patch(path, anchor, new, label, marker)`: skip if `marker` already in file; skip if
+  the anchor does not occur exactly once; else replace once and print `[OK]`. Appended
+  blocks are guarded by a function-name check. Always **idempotent**; a `[SKIP]` with
+  "anchor found 0 times" means nothing changed, so ask for the output.
+- **New files:** `cat > path << 'EOF' … EOF`. **Overwriting** is fine for `pro.css`,
+  `pro.js`, `db.js`, `server.js` (git has history).
+- Tests before sending: build stand-ins from the code the user actually pasted, apply
+  the scripts in order, `node --check`, run behaviour tests (curl against a stand-in
+  server; headless Chromium for UI), render screenshots and *look at them*.
+- Standard checks for the user: hard refresh (**Cmd+Shift+R**), `kill $(lsof -ti :3000)`
+  when `EADDRINUSE`, start with `node --env-file=.env server.js`. Then
+  `git add -A; git status --short` (must show only code files; never `.env`, `data/`),
+  `git commit -m "…"; git push`.
+- Rollback for the design layer: `?classic` or delete the `explodish pro layer` lines.
+  Rollback for code: `git checkout public/app.js public/styles.css` (check `git status` first).
+- Common user slips: running a command outside the folder; pasting a command with the
+  placeholder `<PID>`; leaving the old server running; forgetting a hard refresh;
+  `npm run dev` skips `.env`.
 
-**Menu/market fit:**
-- Veg/non-veg/Jain + allergen filters **shipped**. Dishes carry a `dietary`
-  field (`"veg"` / `"non-veg"` / `"egg"`) and a `jainFriendly` boolean, both
-  set in the owner form's 1st section. The customer menu view shows a
-  filter row (All/Veg/Non-veg pills, a Jain-only toggle, and clickable
-  "No <allergen>" chips built from whatever allergens actually exist in the
-  menu) plus a small FSSAI-style green/brown/amber square dot on every dish
-  card and in the detail overlay. Allergen filtering needed no new tagging —
-  it's computed from each dish's existing per-ingredient `allergens` field,
-  exactly as flagged below as "close to free." One deliberate simplification:
-  for Mode A dishes, only ingredients *included by default* count toward a
-  dish's allergens for filtering purposes — an optional extra a customer
-  actively chooses to add doesn't disqualify the base dish, since adding it
-  is an aware, opt-in choice (its own allergens are still shown at the
-  ingredient level when customizing). Still open: no multi-language menu
-  text — separate piece of work, not attempted here.
-- No AI-assisted ingredient tagging — owner tool is fully manual right now.
-  Highest-leverage next feature for onboarding speed: a vision-model
-  suggests ingredient tags from the uploaded photo, owner just confirms/edits.
-- Real per-ingredient photography (instead of the auto-rendered CSS discs —
-  see section 3) is a real, available upgrade, not a rejected idea: swap in
-  Unsplash/Pexels API results per ingredient name, cached once per unique
-  name and reused everywhere. Needs an API key and a decision on whether the
-  small per-request cost/rate-limit is worth it before building it — holding
-  off until there's a reason to believe photorealism actually matters more
-  than the current polish to real customers.
-- No payments.
+---
 
-## 5. Feature ideas considered but not built (backlog, roughly prioritized)
+## 8. Rebuilding the test rig (after a sandbox reset)
 
-- **AI-assisted onboarding** (see above) — biggest lever on the 2-minute
-  onboarding target.
-- **Reusable ingredient library per restaurant** — tag "cheddar cheese" once
-  with price/allergens/icon, reuse across dishes.
-- **Prep-time estimate shown to customer** ("extra patty adds ~3 min") —
-  another honest-pricing/expectation-setting signal.
-- **Owner analytics that sell the subscription on their own** — e.g. "42% of
-  burger orders add extra cheese — consider bundling it." Some of this
-  already exists (most-added-extras leaderboard); could go further with
-  trend-over-time views.
-- **POS/KDS integration** — likely more important than any customer-facing
-  feature for actually getting trusted/adopted by a restaurant.
-- **Social/viral loop** — let customers save/share a custom build (useful
-  for group ordering at a table; also word-of-mouth, Subway-style).
-- Lower priority / later-stage ideas from the original brainstorm: loyalty
-  and gamification, a "surprise me" AI recommender based on customization
-  history, white-labeling for hotel room service or QSR chains, a table-side
-  tablet/kiosk mode in addition to QR, sustainability/ingredient-sourcing
-  badges as a differentiator, a "chef's rules" constraint engine (e.g. max 3
-  add-ons per dish, can't remove the base sauce).
+- Browser: Chromium at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`; puppeteer
+  from `/home/claude/.npm-global/lib/node_modules/@mermaid-js/mermaid-cli/node_modules/puppeteer`
+  with `headless:'new'` and `args:['--no-sandbox']`. Serve test pages over **http**
+  (`python3 -m http.server`), because `file://` breaks absolute `/fonts/...` URLs.
+- Start servers with `&` and stop them **by PID** (`SRV=$!; kill $SRV`). `pkill -f`
+  can match the shell's own command line and kill the tool call.
+- `npm install` works in the sandbox (registry allowed). `better-sqlite3` installs fine.
+- Rate limits will block bulk API tests; use a test copy with larger limits.
+- Mock pages reproduce app markup from the pasted code; they do **not** include the
+  user's real `styles.css`, so spacing/contrast on the real app can differ.
 
-## 6. Business/rollout context (still valid)
+---
 
-- Target for the first real pilot: **one independent local restaurant**,
-  starting with **one layered category** (burger/sandwich is the natural
-  starting example used throughout).
-- Validate before expanding: do customers actually use the customization, and
-  does it measurably lift order value? Get one real before/after AOV number
-  before pitching anyone else — that number is the entire sales pitch.
-- Recommended rollout order: (1) one layered category at a small number of
-  real restaurants, (2) validate usage + order-value lift, (3) expand to
-  Mode B and additional categories (bowls, wraps, mocktails) once the core
-  loop is proven.
-- Distribution: founder-led pilot first, then go through **POS
-  resellers/system integrators** (e.g. Petpooja/Posist ecosystem) rather than
-  direct restaurant sales at scale, since restaurants already trust their POS
-  vendor's add-on ecosystem.
-- Pricing model direction: per-outlet SaaS + optional small revenue share on
-  upsell, so incentives align with the restaurant's own AOV growth.
+## 9. Next steps (priority order)
 
-## 7. Suggested next steps, in order
+### 9.1 Confirm pro v2 on the real screen (first thing)
+Ask for phone-sized screenshots: Owner tools, Kitchen, customer menu, an open dish,
+cart, login. Check: contrast on every screen (the whole app was re-coloured through
+variables), header hero position, sticky tab bar, preview layout at ~1180 px+, fonts
+loaded, no console errors. Fix from screenshots. **Never restyle blind.**
 
-All four originally-listed next steps are shipped:
-1. ~~Resolve the naming question (section 0).~~ Done — Explodish is final.
-2. ~~Fix the "looks unfinished" problem (section 3's five numbered fixes).~~
-   Done — auto-fit grid, category filter pills, "how it works" strip, photo
-   placeholder icon, and a light density pass on dish cards/stat boxes are
-   all shipped.
-3. ~~Add ingredient dependency rules and non-ingredient modifiers (spice
-   level etc.) to the data model and owner tool.~~ Done — see section 4.
-4. ~~Add veg/non-veg/Jain + allergen filters to the customer menu view.~~
-   Done — see section 4.
+### 9.2 Finish the "crazy UI/UX" the owner asked for
+- **Open-dish bottom sheet:** slides up from the card (shared-element feel), swipe down
+  to close, burger explodes apart on open, sticky glass footer; needs the real
+  `.overlay/.detail` CSS (ask for `sed -n` of those rules).
+- **Skeleton/loading states**, a bold **login/register screen**, **cart as a sheet**,
+  an order **progress track** (received → preparing → ready) instead of plain text.
+- Hero header on the customer page with the restaurant name and a CTA; sticky category
+  bar; smoother page transitions (Motion `animate`, `inView`).
+- More signature moments: tap-to-explode on cards, layer "drop" physics when adding,
+  Mega Stack celebration polish, optional sound (off by default; kitchen chime exists).
 
-Also since shipped, though not originally on this list: a full motion and
-interaction pass (see section 3) — the app no longer feels static; an
-auto-rendered ingredient visual system replacing flat photo placeholders;
-a table QR entry point (the actual real-world "scan to order" flow); and
-drag-and-drop as a second way to adjust ingredients, alongside tap.
+### 9.3 Photoreal layers (owner-led, outside Claude's tools)
+Claude cannot generate or edit photos. Plan: owner generates ONE consistent set of
+transparent side-view layer images with an image tool of their choice (check its
+commercial terms), exports WebP ~800-1000 px wide (<150 KB), names them as in section
+2, drops them in `public/ingredients/`, and sets `LAYER_IMAGES_ON = true`. Test first
+with 3 layers (top bun, clearly vegetarian patty, bottom bun). Shot-list/prompt
+sheet: same style sentence for every ingredient, only the food name changes; avoid
+anything that looks like meat or egg; no baked-in shadows (the app draws its own).
+Photoreal real-time 3D (Three.js) was considered and deferred (heavy, hard to keep
+consistent). Never use images found via search; licences unclear.
 
-**One thing flagged, not fixed:** adding the `qrcode` package surfaced 2
-pre-existing moderate-severity `npm audit` findings in `qs` (a dependency
-of Express itself, unrelated to anything built this round) — a
-parsing/DoS issue, not something this app's own code triggers, but worth
-an `npm audit fix` pass before a real pilot goes live.
+### 9.4 Pilot (most valuable)
+Free tunnel (Cloudflare Tunnel or ngrok; check current free limits) so a restaurant can
+scan real QR codes against the owner's laptop for a day. Set up 5-8 real dishes. One-page
+visit plan + what to record (orders, average order, **share of orders with ≥1 add-on**
+from the History card). After a pilot: hosting with a persistent disk for `data/`
+(JSON/SQLite files are wiped on many free hosts), a real `JWT_SECRET` set on the host,
+`NODE_ENV=production`, `TRUST_PROXY=1`.
 
-What's left is the bigger, longer-horizon work from sections 4–6:
-5. Swap JSON-file storage for a real database once ready to pilot with an
-   actual restaurant (schema is already compatible).
-6. Add restaurant accounts (`restaurantId` everywhere) once there's more than
-   one restaurant using it.
-7. Look at POS/KDS integration options for the target pilot restaurant's
-   existing system.
-8. Consider AI-assisted ingredient tagging (section 5) to hit the ~2-minute
-   onboarding target — likely the single highest-leverage feature left.
-9. Get this in front of one real restaurant. Everything else in this doc is
-   a guess until there's one real before/after order-value number.
+### 9.5 Product gaps (build only when a restaurant asks)
+Billing/pricing page; password reset; staff accounts; POS/KDS integration (Petpooja,
+Posist); ingredient-level "86 this"; GST handling; combo/thali pricing; per-restaurant
+switch for game elements; multi-outlet; offline handling; an owner-side swap editor for
+Mode B; real database (Postgres) only if scale demands.
+
+### 9.6 Cleanup
+- Dead non-veg code in `app.js` (`activeDietary`, `dot-nonveg/egg` branches in the
+  dietary dot, `renderModeBIcon` mentions) and in `PROJECT_CONTEXT`/README.
+- `app.js` is one very large file; consider splitting **after** the pilot.
+- Update the owner guide artifact for game layers, build level, pro design.
+- Self-hosted fonts and libs are committed under `public/`; keep `package.json` in sync.
+- Check the licences once (Motion MIT, SortableJS MIT, canvas-confetti ISC, Fraunces/Inter OFL).
+
+---
+
+## 10. Known risks / UNVERIFIED list
+
+- Batches 1, 1b, 3, 2, 2b, 4 were each tested on stand-ins; the owner reported
+  `[OK]` lines and pushed commits, but **never confirmed the browser behaviour**
+  (cart persistence, banner, cancel, history/CSV, price-protection message, drawn
+  layers on the real page, build level).
+- The owner's own screenshots confirmed pro v1 in Owner tools (preview, step badges,
+  sticky bar); they showed content peeking above the tab bar and an odd gap by the
+  Jain checkbox (v2 addresses the first).
+- Pro v2 was only seen in a mock. The hero burger was mis-sized once and fixed;
+  confirm on the real header.
+- Layer spacing, stage height (200 px), meter colours, and card scaling were set
+  without seeing the real CSS for those parts.
+- Cheap-phone performance of aurora/blur/animations is untested.
+- `index.html` has never been shown to Claude; the installers assume one `</head>`
+  and one `</body>` and print `[SKIP]` otherwise.
+- The server rate limiter is in memory (resets on restart; per IP).
+- `data-backup/` and `data/explodish.db.backup-*` exist locally; they are git-ignored.
+
+---
+
+## 11. Suggested first message in the new chat
+
+> Read PROJECT_CONTEXT.md (attached/pasted). We are continuing Explodish. Start with 9.1:
+> I'll send phone-sized screenshots of every screen after applying pro v2. Then do 9.2
+> (open-dish bottom sheet, skeletons, login screen, cart sheet, order progress), and
+> after that prepare the pilot (9.4). Keep replies short, send paste-in `EOF` blocks,
+> test in a real browser before sending, and be honest about what is unverified.
