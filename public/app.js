@@ -733,9 +733,9 @@ function renderDetailOverlay(){
 
   overlay.innerHTML = `
     <div class="detail">
-      ${dish.image
-        ? `<img class="detail-hero" src="${dish.image}" loading="lazy" decoding="async" alt="">`
-        : `<div class="detail-stack-stage"><div class="stack-stage-inner">${renderExplodedStack(dish, currentDetail.config, {compact:false, interactive:true})}</div><div class="drag-hint">Tap +/− or drag ingredients to adjust</div></div>`}
+      ${dish.image && currentDetail.showPhoto
+        ? `<div class="detail-photo-wrap"><img class="detail-hero" src="${dish.image}" decoding="async" alt=""><button type="button" class="photo-toggle" id="photoToggle">Show layers</button></div>`
+        : `<div class="detail-stack-stage"><div class="stack-stage-inner">${renderExplodedStack(dish, currentDetail.config, {compact:false, interactive:true})}</div><div class="drag-hint">Tap +/− or drag ingredients to adjust</div>${dish.image ? '<button type="button" class="photo-toggle" id="photoToggle">See photo</button>' : ''}</div>`}
       <div class="detail-body">
         <button class="detail-close" id="closeDetail" aria-label="Close">✕</button>
         <div class="detail-title-row"><h2>${dietaryDotHtml(dish)}${escapeHtml(dish.name)}</h2></div>
@@ -754,6 +754,8 @@ function renderDetailOverlay(){
     </div>
   `;
   document.body.appendChild(overlay);
+  const photoToggle = overlay.querySelector('#photoToggle');
+  if(photoToggle) photoToggle.addEventListener('click', ()=>{ currentDetail.showPhoto = !currentDetail.showPhoto; renderDetailOverlay(); });
   if(firstRender){
     // True entrance: force one frame so the browser registers the closed
     // state before we flip to open, so the slide-up/cascade actually plays.
