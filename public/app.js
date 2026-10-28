@@ -1011,21 +1011,41 @@ function renderCartFab(){
   fab.onclick = toggleCartPanel;
 }
 function hideCart(){ document.getElementById('cartPanel').style.display='none'; }
-function toggleCartPanel(){
+function drawCartPanel(){
   const cp = document.getElementById('cartPanel');
-  if(cp.style.display==='block'){ cp.style.display='none'; return; }
-  cp.style.display='block';
+  const total = CART.reduce((s,i)=>s+i.price,0);
   cp.innerHTML = CART.map((item,i)=>`
-    <div class="cart-line new" style="--i:${i}">
+    <div class="cart-line">
       <div class="cl-top"><span>${escapeHtml(item.dishName)}</span><span>${fmt(item.price)}</span></div>
       ${item.mods.length? `<div class="cl-mods">${item.mods.map(escapeHtml).join(' · ')}</div>`:''}
+      <div class="cl-actions">
+        <button type="button" class="cl-btn" data-cart-act="more" data-i="${i}" aria-label="Add another ${escapeHtml(item.dishName)}">+ Another</button>
+        <button type="button" class="cl-btn cl-remove" data-cart-act="remove" data-i="${i}" aria-label="Remove ${escapeHtml(item.dishName)}">Remove</button>
+      </div>
     </div>
   `).join('') + `
+    <div class="cl-total"><span>Total</span><span>${fmt(total)}</span></div>
     <div style="padding-top:10px;">
       <button class="btn" style="width:100%;" id="placeOrderBtn">Place order</button>
     </div>
   `;
   document.getElementById('placeOrderBtn').addEventListener('click', placeOrder);
+  cp.querySelectorAll('[data-cart-act]').forEach(b=>b.addEventListener('click', ()=>{
+    const i = Number(b.dataset.i);
+    if(b.dataset.cartAct === 'remove'){ CART.splice(i, 1); }
+    else {
+      if(CART.length >= 50){ toast('That is the most items one order can hold.'); return; }
+      CART.splice(i + 1, 0, JSON.parse(JSON.stringify(CART[i])));
+    }
+    renderCartFab();
+    if(CART.length) drawCartPanel();
+  }));
+}
+function toggleCartPanel(){
+  const cp = document.getElementById('cartPanel');
+  if(cp.style.display==='block'){ cp.style.display='none'; return; }
+  cp.style.display='block';
+  drawCartPanel();
 }
 
 let placingOrder = false;
