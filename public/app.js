@@ -1552,6 +1552,12 @@ function kitchenViewBase(){
 
   return `
     <div class="section-card">
+      <h3>Live orders</h3>
+      <div class="sc-desc">What the kitchen actually needs to see for each order.</div>
+      ${recentTickets || '<div class="empty">No orders yet.</div>'}
+    </div>
+
+    <div class="section-card">
       <h3>Today at a glance</h3>
       <div class="sc-desc">Orders placed today, counted from midnight.</div>
       <div class="stat-grid">
@@ -1570,11 +1576,6 @@ function kitchenViewBase(){
       `).join('') : '<div class="empty">No customisation data yet — place an order from the Menu tab.</div>'}
     </div>
 
-    <div class="section-card">
-      <h3>Kitchen tickets</h3>
-      <div class="sc-desc">What the kitchen actually needs to see for each order.</div>
-      ${recentTickets || '<div class="empty">No orders yet.</div>'}
-    </div>
   `;
 }
 const ORDER_FLOW = {

@@ -613,3 +613,11 @@ body.scrolled .tabs{
 .detail-stack-stage{position:relative;}
 .photo-toggle{position:absolute;top:12px;left:12px;z-index:3;min-height:36px;padding:0 14px;border-radius:999px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.55);color:#fff;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;backdrop-filter:blur(6px);}
 .photo-toggle:active{transform:scale(.97);}
+
+/* phone layout fixes */
+.detail > .detail-footer{margin-left:0;margin-right:0;}
+@media (max-width:560px){
+  .field-row{grid-template-columns:1fr;}
+}
+body:has(.pro-sound:not([hidden])){padding-bottom:calc(84px + env(safe-area-inset-bottom,0px));}
+.pro .ticket .btn.secondary{background:transparent;color:var(--ink);border:1px solid var(--paper-line);}
