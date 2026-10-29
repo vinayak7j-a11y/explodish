@@ -168,7 +168,7 @@ let PUBLIC_SLUG = null; // set on the customer route
 /* Table QR entry point: a table's QR code just links to this same page with
    ?table=N appended. Whatever table number is in the URL travels with any
    order placed this session, so the kitchen knows where it's going. */
-const CURRENT_TABLE = new URLSearchParams(window.location.search).get('table');
+const CURRENT_TABLE = (()=>{ const t = (new URLSearchParams(window.location.search).get('table') || '').trim(); return /^[A-Za-z0-9-]{1,8}$/.test(t) ? t : null; })();
 
 /* ---------------- routing ----------------
    Three completely separate experiences share this one app.js:
@@ -696,7 +696,7 @@ function renderDetailOverlay(){
       if(ing.swappable){
         const c = currentDetail.config.find(x=>x.index===i);
         swapHtml = `<select class="swap-select" data-idx="${i}">
-          ${ing.swapOptions.map((o,oi)=>`<option value="${oi}" ${oi===c.swapChoice?'selected':''}>${o.label}${o.price? ' (+'+fmt(o.price)+')':''}</option>`).join('')}
+          ${ing.swapOptions.map((o,oi)=>`<option value="${oi}" ${oi===c.swapChoice?'selected':''}>${escapeHtml(o.label)}${o.price? ' (+'+fmt(o.price)+')':''}</option>`).join('')}
         </select>`;
       }
       return `<div class="layer-item">
@@ -1274,13 +1274,26 @@ function renderModifierGroups(){
   `).join('');
 }
 
+function swapText(ing){
+  return (ing.swapOptions || []).map(o => o.label + (o.price ? ' ' + (o.price > 0 ? '+' : '') + o.price : '')).join(', ');
+}
+function parseSwapText(str){
+  return String(str || '').split(',').map(x => x.trim()).filter(Boolean).map(x => {
+    const m = x.match(/^(.*?)\s*([+-]\s*\u20b9?\s*\d+(?:\.\d+)?)?$/);
+    const label = ((m && m[1]) ? m[1] : x).trim().slice(0, 40);
+    const price = (m && m[2]) ? Number(m[2].replace(/[^0-9.+-]/g, '')) : 0;
+    return { label, price: isFinite(price) ? price : 0 };
+  }).filter(o => o.label);
+}
 function renderIngredientRowsB(){
-  if(ownerDraft.ingredients.length===0) return '<div class="empty">No ingredients yet — add the first one below.</div>';
+  if(ownerDraft.ingredients.length===0) return '<div class="empty">No ingredients yet \u2014 add the first one below.</div>';
   return ownerDraft.ingredients.map((ing,i)=>`
     <div class="ingredient-row" style="grid-template-columns:1.4fr 2fr auto;" data-i="${i}">
       <input type="text" class="ing-name" value="${escapeHtml(ing.name||'')}" placeholder="Ingredient name">
       <input type="text" class="ing-allergens" placeholder="Allergens, comma separated" value="${(ing.allergens||[]).join(', ')}">
-      <button class="remove-ing" data-i="${i}" aria-label="Remove this row">✕</button>
+      <button class="remove-ing" data-i="${i}" aria-label="Remove this row">\u2715</button>
+      <label style="grid-column:1/-1;display:flex;gap:8px;align-items:center;font-size:13px;"><input type="checkbox" class="ing-swappable" ${ing.swappable ? 'checked' : ''}> Customer can swap this</label>
+      ${ing.swappable ? `<input type="text" class="ing-swaps" style="grid-column:1/-1;" placeholder="Options, first is the default, e.g. Paneer, Tofu +40, Mushroom +30" value="${escapeHtml(swapText(ing))}">` : ''}
     </div>
   `).join('');
 }
@@ -1379,6 +1392,11 @@ function attachOwnerHandlers(){
       row.querySelector('.ing-maxqty').addEventListener('input', e=> ing.maxQty = parseInt(e.target.value)||1);
       row.querySelector('.ing-included').addEventListener('change', e=> ing.included = e.target.checked);
       row.querySelector('.ing-mandatory').addEventListener('change', e=> ing.mandatory = e.target.checked);
+    } else {
+      const sw = row.querySelector('.ing-swappable');
+      if(sw) sw.addEventListener('change', e=>{ ing.swappable = e.target.checked; if(!ing.swapOptions) ing.swapOptions = []; renderAdmin(); });
+      const so = row.querySelector('.ing-swaps');
+      if(so) so.addEventListener('input', e=> ing.swapOptions = parseSwapText(e.target.value));
     }
   });
 
@@ -1486,9 +1504,11 @@ async function saveDraft(){
   if(ownerDraft.ingredients.length===0){ toast('Tag at least one ingredient'); return; }
   if(ownerDraft.mode==='A' && ownerDraft.ingredients.some(i=>!i.name.trim())){ toast('Every layer needs a name'); return; }
   if(ownerDraft.mode==='B' && ownerDraft.ingredients.some(i=>!i.name.trim())){ toast('Every ingredient needs a name'); return; }
+  if(ownerDraft.mode==='B' && ownerDraft.ingredients.some(i=>i.swappable && (!i.swapOptions || i.swapOptions.length < 2))){ toast('A swappable ingredient needs at least two options, like "Paneer, Tofu +40"'); return; }
 
   const clean = JSON.parse(JSON.stringify(ownerDraft));
   clean.basePrice = parseFloat(clean.basePrice);
+  if(clean.mode==='B') clean.ingredients.forEach(i=>{ if(!i.swappable){ i.swappable = false; i.swapOptions = []; } });
 
   try{
     if(clean.id){

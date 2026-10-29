@@ -333,7 +333,7 @@ function priceItem(dish, it) {
 
 /* ---------- Orders ---------- */
 
-app.post('/api/r/:slug/orders', rateLimit(60, 10 * 60 * 1000), (req, res) => {
+app.post('/api/r/:slug/orders', rateLimit(200, 10 * 60 * 1000), (req, res) => {
   const restaurant = activeBySlug(req.params.slug);
   if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
   if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
@@ -355,7 +355,7 @@ app.post('/api/r/:slug/orders', rateLimit(60, 10 * 60 * 1000), (req, res) => {
   });
   order.total = order.items.reduce((s, it) => s + it.price, 0); // the server adds it up, not the phone
   order.upsell = order.items.reduce((s, it) => s + it.deltas.reduce((a, d) => a + Math.max(d.amount, 0), 0), 0);
-  order.table = order.table == null || order.table === '' ? null : String(order.table).slice(0, 20);
+  { const t = order.table == null ? '' : String(order.table).trim(); order.table = /^[A-Za-z0-9-]{1,8}$/.test(t) ? t : null; }
 
   // Re-price every item from the saved menu. The phone's price is never trusted.
   const menu = new Map(store.listDishes(restaurant.id).map(d => [d.id, d]));
@@ -408,7 +408,7 @@ app.get('/api/r/:slug/orders/:id/status', rateLimit(200, 10 * 60 * 1000), (req, 
 });
 
 /* A customer can cancel their own order, but only before the kitchen starts it. */
-app.post('/api/r/:slug/orders/:id/cancel', rateLimit(30, 10 * 60 * 1000), (req, res) => {
+app.post('/api/r/:slug/orders/:id/cancel', rateLimit(60, 10 * 60 * 1000), (req, res) => {
   const restaurant = activeBySlug(req.params.slug);
   const order = restaurant && store.getOrder(req.params.id);
   if (!order || order.restaurantId !== restaurant.id) return res.status(404).json({ error: 'Order not found' });

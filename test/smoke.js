@@ -86,6 +86,18 @@ async function run(slugHolder) {
   const list = await call('GET', '/api/orders', undefined, true);
   check('owner sees the order with table 4', list.status === 200 && Array.isArray(list.json) && list.json.some(o => o.table === '4'));
 
+  console.log('\nTable and swaps');
+  const junk = await call('POST', `/api/r/${slug}/orders`, { ...orderFor(dish, 169), table: '"><img src=x onerror=alert(1)>' });
+  check('junk table value is stored as "no table"', junk.status === 201 && junk.json && junk.json.table === null, `status ${junk.status}, table ${junk.json && junk.json.table}`);
+  const curry = { name: 'Test Curry', mode: 'B', basePrice: 200, category: 'Curries', image: null, removalRefund: false, dietary: 'veg', jainFriendly: false,
+    ingredients: [{ id: 'c1', name: 'Paneer', allergens: ['Dairy'], swappable: true, swapOptions: [{ label: 'Paneer', price: 0 }, { label: 'Tofu', price: 40 }] }], modifiers: [] };
+  const cd = (await call('POST', '/api/dishes', curry, true)).json;
+  const swapOrder = (price) => ({ table: '4', items: [{ dishId: cd.id, dishName: cd.name, price, config: [{ index: 0, swapChoice: 1 }], modifierChoices: {}, mods: [], deltas: [] }] });
+  const okSwap = await call('POST', `/api/r/${slug}/orders`, swapOrder(240));
+  check('swap to Tofu is priced correctly (240)', okSwap.status === 201 && okSwap.json.total === 240, `status ${okSwap.status}`);
+  const badSwap = await call('POST', `/api/r/${slug}/orders`, swapOrder(200));
+  check('swap with the old price is rejected (409)', badSwap.status === 409, `status ${badSwap.status}`);
+
   console.log('\nStatus flow');
   const prep = await call('PATCH', `/api/orders/${good.json.id}/status`, { status: 'preparing' }, true);
   check('owner can mark preparing', prep.status === 200 && prep.json.status === 'preparing');
