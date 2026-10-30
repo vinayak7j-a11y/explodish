@@ -386,6 +386,7 @@ app.post('/api/r/:slug/orders', rateLimit(200, 10 * 60 * 1000), (req, res) => {
   order.time = new Date().toISOString();
   order.status = 'new'; // always starts as new, whatever the client sent
   store.insertOrder(order);
+  notifyOrders(restaurant.id, 'new');
   res.status(201).json(order);
 });
 
@@ -395,6 +396,7 @@ app.patch('/api/orders/:id/status', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Invalid status' });
   }
   const order = store.setOrderStatus(req.params.id, req.restaurantId, status);
+  if (order) notifyOrders(req.restaurantId, 'status');
   if (!order) return res.status(404).json({ error: 'Order not found' });
   res.json(order);
 });
@@ -416,6 +418,7 @@ app.post('/api/r/:slug/orders/:id/cancel', rateLimit(60, 10 * 60 * 1000), (req, 
   if (status === 'cancelled') return res.json({ status: 'cancelled' });
   if (status !== 'new') return res.status(409).json({ error: 'The kitchen has already started this order' });
   store.setOrderStatus(order.id, restaurant.id, 'cancelled');
+  notifyOrders(restaurant.id, 'cancelled');
   res.json({ status: 'cancelled' });
 });
 
@@ -446,6 +449,26 @@ app.get('/api/orders.csv', requireAuth, (req, res) => {
   res.set('Content-Type', 'text/csv; charset=utf-8');
   res.set('Content-Disposition', 'attachment; filename="explodish-orders.csv"');
   res.send('\ufeff' + lines.join('\r\n') + '\r\n');
+});
+
+/* Live order updates: every logged-in kitchen screen keeps one open connection.
+   When an order is placed, changed or cancelled, we tell that restaurant's screens to refresh. */
+const orderStreams = new Map(); // restaurantId -> Set of open responses
+function notifyOrders(restaurantId, kind) {
+  const set = orderStreams.get(restaurantId);
+  if (!set) return;
+  for (const res of set) { try { res.write(`event: orders\ndata: ${JSON.stringify({ kind })}\n\n`); } catch (e) {} }
+}
+app.get('/api/orders/stream', requireAuth, (req, res) => {
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+  res.flushHeaders();
+  res.write('retry: 3000\n\n');
+  res.write('event: hello\ndata: {}\n\n');
+  let set = orderStreams.get(req.restaurantId);
+  if (!set) { set = new Set(); orderStreams.set(req.restaurantId, set); }
+  set.add(res);
+  const beat = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) {} }, 25000);
+  req.on('close', () => { clearInterval(beat); set.delete(res); if (!set.size) orderStreams.delete(req.restaurantId); });
 });
 
 app.get('/api/orders', requireAuth, (req, res) => {

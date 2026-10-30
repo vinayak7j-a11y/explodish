@@ -98,6 +98,29 @@ async function run(slugHolder) {
   const badSwap = await call('POST', `/api/r/${slug}/orders`, swapOrder(200));
   check('swap with the old price is rejected (409)', badSwap.status === 409, `status ${badSwap.status}`);
 
+  console.log('\nLive updates');
+  const noStream = await call('GET', '/api/orders/stream');
+  check('live stream needs login (401)', noStream.status === 401, `status ${noStream.status}`);
+  const ctl = new AbortController();
+  const sres = await fetch(BASE + '/api/orders/stream', { headers: { Cookie: cookie }, signal: ctl.signal });
+  check('live stream opens for the owner', sres.status === 200 && (sres.headers.get('content-type') || '').includes('text/event-stream'), `status ${sres.status}`);
+  const reader = sres.body.getReader(); const dec = new TextDecoder(); let buf = ''; let pending = null;
+  const readFor = async (ms, until) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end && !until(buf)) {
+      if (!pending) pending = reader.read();
+      const r = await Promise.race([pending, new Promise(res => setTimeout(() => res(null), 200))]);
+      if (r) { pending = null; if (r.value) buf += dec.decode(r.value); if (r.done) break; }
+    }
+  };
+  await readFor(1500, b => b.includes('event: hello'));
+  const t0 = Date.now();
+  await call('POST', `/api/r/${slug}/orders`, orderFor(dish, 169));
+  await readFor(3000, b => b.includes('event: orders'));
+  check('owner is told about a new order within 3 s', buf.includes('event: orders'), `waited ${Date.now() - t0} ms`);
+  if (pending) pending.catch(() => {});
+  ctl.abort();
+
   console.log('\nStatus flow');
   const prep = await call('PATCH', `/api/orders/${good.json.id}/status`, { status: 'preparing' }, true);
   check('owner can mark preparing', prep.status === 200 && prep.json.status === 'preparing');

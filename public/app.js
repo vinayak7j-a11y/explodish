@@ -1611,19 +1611,51 @@ function statusControls(o){
     <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">${step ? `<button class="btn small status-btn" data-order="${escapeHtml(o.id)}" data-next="${step.next}">${step.btn}</button><button class="btn secondary small cancel-btn" data-order="${escapeHtml(o.id)}">Cancel</button>` : ''}</span>
   </div>`;
 }
-let kitchenPoll = null;
+let kitchenPoll = null, kitchenStream = null, streamOpen = false, lastOrdersOk = Date.now(), lastOrdersTry = 0;
+function setConnBar(lost){
+  let bar = document.getElementById('connBar');
+  if(!lost){ if(bar) bar.remove(); return; }
+  if(bar) return;
+  bar = document.createElement('div');
+  bar.id = 'connBar'; bar.setAttribute('role','alert');
+  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99;background:#b3261e;color:#fff;text-align:center;font-weight:700;font-size:13px;padding:8px 12px;padding-top:calc(8px + env(safe-area-inset-top,0px));';
+  bar.textContent = 'Connection lost \u2014 new orders may be delayed. Trying to reconnect\u2026';
+  document.body.appendChild(bar);
+}
+async function refreshKitchenOrders(){
+  lastOrdersTry = Date.now();
+  try{
+    const r = await fetch('/api/orders');
+    if(!r.ok) throw new Error('bad status');
+    const fresh = await r.json();
+    lastOrdersOk = Date.now();
+    setConnBar(false);
+    const sig = a => a.map(o=>o.id+':'+(o.status||'new')).join('|');
+    if(sig(fresh)!==sig(ORDERS)){
+      ORDERS.length = 0; fresh.forEach(o=>ORDERS.push(o));
+      if(activeTab==='kitchen') renderAdmin();
+    }
+  }catch(e){
+    if(!navigator.onLine || Date.now() - lastOrdersOk > 25000) setConnBar(true);
+  }
+}
 function startKitchenPoll(){
   if(kitchenPoll) return;
-  kitchenPoll = setInterval(async ()=>{
-    if(activeTab!=='kitchen' || document.hidden) return;
-    try{
-      const r = await fetch('/api/orders');
-      if(!r.ok) return;
-      const fresh = await r.json();
-      const sig = a => a.map(o=>o.id+':'+(o.status||'new')).join('|');
-      if(sig(fresh)!==sig(ORDERS)){ ORDERS.length = 0; fresh.forEach(o=>ORDERS.push(o)); renderAdmin(); }
-    }catch(e){ /* offline: try again next tick */ }
-  }, 10000);
+  if(window.EventSource){
+    kitchenStream = new EventSource('/api/orders/stream');
+    kitchenStream.addEventListener('orders', refreshKitchenOrders);
+    kitchenStream.onopen = ()=>{ streamOpen = true; refreshKitchenOrders(); };
+    kitchenStream.onerror = ()=>{ streamOpen = false; };
+  }
+  window.addEventListener('offline', ()=> setConnBar(true));
+  window.addEventListener('online', refreshKitchenOrders);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) refreshKitchenOrders(); });
+  // Safety net in case the live connection silently dies: check every 5 s, or every 20 s while it is live.
+  kitchenPoll = setInterval(()=>{
+    if(document.hidden) return;
+    if(Date.now() - lastOrdersTry < (streamOpen ? 20000 : 5000) - 500) return;
+    refreshKitchenOrders();
+  }, 5000);
 }
 function attachKitchenHandlers(){
   startKitchenPoll();
