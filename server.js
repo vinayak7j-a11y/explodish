@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const store = require('./db');
+const telegram = require('./telegram');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -387,6 +388,7 @@ app.post('/api/r/:slug/orders', rateLimit(200, 10 * 60 * 1000), (req, res) => {
   order.status = 'new'; // always starts as new, whatever the client sent
   store.insertOrder(order);
   notifyOrders(restaurant.id, 'new');
+  telegram.notifyNewOrder(order, restaurant);
   res.status(201).json(order);
 });
 
@@ -450,6 +452,8 @@ app.get('/api/orders.csv', requireAuth, (req, res) => {
   res.set('Content-Disposition', 'attachment; filename="explodish-orders.csv"');
   res.send('\ufeff' + lines.join('\r\n') + '\r\n');
 });
+
+telegram.mount(app, { requireAuth, rateLimit });
 
 /* Live order updates: every logged-in kitchen screen keeps one open connection.
    When an order is placed, changed or cancelled, we tell that restaurant's screens to refresh. */
@@ -529,4 +533,5 @@ if (store.restaurantCount() === 0 && process.env.NODE_ENV !== 'production') {
 
 app.listen(PORT, () => {
   console.log(`Explodish menu app running at http://localhost:${PORT}`);
+  telegram.start();
 });

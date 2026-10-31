@@ -164,8 +164,8 @@
     try { var C = window.AudioContext || window.webkitAudioContext; if (C) audio = new C(); } catch (e) {}
   }
   ['pointerdown', 'keydown'].forEach(function (t) { document.addEventListener(t, unlockAudio, { passive: true }); });
-  function chime() {
-    if (!audio || !soundOn) return;
+  function chime(force) {
+    if (!audio || (!soundOn && !force)) return;
     try {
       if (audio.state === 'suspended') audio.resume();
       [[880, 0], [1175, 0.16]].forEach(function (n) {
@@ -176,22 +176,32 @@
       });
     } catch (e) {}
   }
-  function soundLabel() { return soundOn ? '\ud83d\udd14 New-order sound: on' : '\ud83d\udd15 New-order sound: off'; }
+  window.explodishChime = chime;
+  // Keep ringing every 6 s for as long as any order is still waiting to be accepted (status "new").
+  setInterval(function () { if (soundOn && (window.EXPLODISH_NEW || 0) > 0) chime(); }, 6000);
+  function soundLabel() { return soundOn ? '\ud83d\udd14 Sound on' : '\ud83d\udd15 Sound off'; }
   function soundButton() {
     var btn = $('.pro-sound');
     if (btn) return btn;
-    btn = document.createElement('button'); btn.type = 'button'; btn.className = 'pro-sound'; btn.hidden = true; btn.textContent = soundLabel();
+    var bar = document.createElement('div'); bar.className = 'pro-sound-bar'; bar.hidden = true;
+    btn = document.createElement('button'); btn.type = 'button'; btn.className = 'pro-sound'; btn.textContent = soundLabel();
     btn.addEventListener('click', function () {
       unlockAudio(); soundOn = !soundOn;
       try { localStorage.setItem('explodish-kitchen-sound', soundOn ? 'on' : 'off'); } catch (e) {}
       btn.textContent = soundLabel(); if (soundOn) chime();
     });
-    document.body.appendChild(btn);
+    var test = document.createElement('button'); test.type = 'button'; test.className = 'pro-sound pro-test'; test.textContent = 'Test alert';
+    test.addEventListener('click', function () {
+      unlockAudio(); chime(true); setTimeout(function () { chime(true); }, 900);
+      test.textContent = 'Did you hear it?';
+      setTimeout(function () { test.textContent = 'Test alert'; }, 3500);
+    });
+    bar.appendChild(btn); bar.appendChild(test); document.body.appendChild(bar);
     return btn;
   }
   function kitchen() {
     var active = $('.tab.active'), onKitchen = !!(active && active.dataset.tab === 'kitchen');
-    soundButton().hidden = !onKitchen;
+    soundButton().parentNode.hidden = !onKitchen;
     if (!onKitchen) { seen = null; return; }
     var ids = {}, fresh = [];
     $$('.ticket-card').forEach(function (t) {

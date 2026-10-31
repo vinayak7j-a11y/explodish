@@ -34,6 +34,11 @@ CREATE TABLE IF NOT EXISTS orders (
   data TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_orders_rest ON orders(restaurant_id);
+CREATE TABLE IF NOT EXISTS telegram_links (
+  restaurant_id TEXT PRIMARY KEY REFERENCES restaurants(id),
+  chat_id TEXT NOT NULL,
+  linked_at TEXT NOT NULL
+);
 `);
 
 const toRestaurant = r => r && ({
@@ -113,6 +118,10 @@ module.exports = {
   insertOrder: o => q.insOrder.run(o.id, o.restaurantId, o.time, JSON.stringify(o)),
   listOrders: rid => q.ordersFor.all(rid).map(orderFromRow),
   getOrder: id => { const r = q.ordById.get(String(id)); return r ? orderFromRow(r) : null; },
+  getTelegramChat: rid => { const r = db.prepare('SELECT chat_id FROM telegram_links WHERE restaurant_id = ?').get(rid); return r ? r.chat_id : null; },
+  setTelegramChat: (rid, chatId) => db.prepare('INSERT INTO telegram_links (restaurant_id, chat_id, linked_at) VALUES (?, ?, ?) ON CONFLICT(restaurant_id) DO UPDATE SET chat_id = excluded.chat_id, linked_at = excluded.linked_at').run(rid, String(chatId), new Date().toISOString()),
+  clearTelegramChat: rid => db.prepare('DELETE FROM telegram_links WHERE restaurant_id = ?').run(rid),
+  listTelegramRestaurants: () => db.prepare('SELECT restaurant_id FROM telegram_links').all().map(r => r.restaurant_id),
   setOrderStatus: (id, rid, status) => {
     const row = q.ordById.get(String(id));
     if (!row || row.restaurant_id !== rid) return null;

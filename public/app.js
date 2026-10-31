@@ -316,6 +316,8 @@ function renderAdminTabs(){
 
 function renderAdmin(){
   const panel = document.getElementById('panel');
+  syncNewCount();
+  startKitchenPoll();
   if(activeTab==='owner'){ panel.innerHTML = ownerView(); attachOwnerHandlers(); }
   else { panel.innerHTML = kitchenView(); attachKitchenHandlers(); }
   panel.classList.remove('entering');
@@ -1551,17 +1553,23 @@ function kitchenViewBase(){
   })));
   const topIngredients = Object.entries(ingCount).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
-  const recentTickets = ORDERS.filter(o=>!['done','cancelled'].includes(o.status||'new')).slice().reverse().slice(0,12).map(o=>`
+  const statusRank = { new: 0, preparing: 1, ready: 2 };
+  const modClass = m => /^(no |without |skip |\u2212|-)/i.test(m.trim()) ? 'mod-remove' : (/^\+/.test(m.trim()) ? 'mod-add' : 'mod-other');
+  const recentTickets = ORDERS.filter(o=>!['done','cancelled'].includes(o.status||'new'))
+    .slice().sort((a,b)=> (statusRank[a.status||'new'] - statusRank[b.status||'new']) || (new Date(a.time) - new Date(b.time)))
+    .slice(0,12).map(o=>{
+      const mins = Math.max(0, Math.round((Date.now() - new Date(o.time).getTime())/60000));
+      return `
     <div class="ticket ticket-card">
-      <div class="ticket-head"><span>${o.table ? `Table ${escapeHtml(String(o.table))} · ` : ''}Order ${o.id}</span><span>${new Date(o.time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</span></div>
+      <div class="ticket-head"><span class="th-table">${o.table ? `TABLE ${escapeHtml(String(o.table))}` : 'NO TABLE'}</span><span>Order ${o.id} \u00b7 ${new Date(o.time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})} \u00b7 ${mins} min ago</span></div>
       ${o.items.map(it=>`
         <div class="ticket-line"><strong>${escapeHtml(it.dishName)}</strong></div>
-        ${it.mods.map(m=>`<div class="ticket-line tl-mod">— ${escapeHtml(m)}</div>`).join('')}
+        ${it.mods.map(m=>`<div class="ticket-line tl-mod ${modClass(m)}">${escapeHtml(m)}</div>`).join('')}
       `).join('')}
       <div class="ticket-line" style="text-align:right;font-weight:700;margin-top:6px;">${fmt(o.total)}</div>
       ${statusControls(o)}
     </div>
-  `).join('');
+  `;}).join('');
 
   const icons = {
     orders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>',
@@ -1577,6 +1585,7 @@ function kitchenViewBase(){
       ${recentTickets || '<div class="empty">No orders yet.</div>'}
     </div>
 
+    ${telegramCardHtml()}
     <div class="section-card">
       <h3>Today at a glance</h3>
       <div class="sc-desc">Orders placed today, counted from midnight.</div>
@@ -1622,6 +1631,17 @@ function setConnBar(lost){
   bar.textContent = 'Connection lost \u2014 new orders may be delayed. Trying to reconnect\u2026';
   document.body.appendChild(bar);
 }
+function syncNewCount(){
+  const n = ORDERS.filter(o => (o.status || 'new') === 'new').length;
+  window.EXPLODISH_NEW = n;
+  const tab = document.querySelector('.tab[data-tab="kitchen"]');
+  if(!tab) return;
+  let b = tab.querySelector('.kbadge');
+  if(n > 0 && activeTab !== 'kitchen'){
+    if(!b){ b = document.createElement('span'); b.className = 'kbadge'; tab.appendChild(b); }
+    b.textContent = n;
+  } else if(b){ b.remove(); }
+}
 async function refreshKitchenOrders(){
   lastOrdersTry = Date.now();
   try{
@@ -1632,8 +1652,12 @@ async function refreshKitchenOrders(){
     setConnBar(false);
     const sig = a => a.map(o=>o.id+':'+(o.status||'new')).join('|');
     if(sig(fresh)!==sig(ORDERS)){
+      const known = new Set(ORDERS.map(o=>o.id));
+      const gotNew = fresh.some(o => !known.has(o.id) && (o.status || 'new') === 'new');
       ORDERS.length = 0; fresh.forEach(o=>ORDERS.push(o));
+      syncNewCount();
       if(activeTab==='kitchen') renderAdmin();
+      else if(gotNew && window.explodishChime) window.explodishChime();
     }
   }catch(e){
     if(!navigator.onLine || Date.now() - lastOrdersOk > 25000) setConnBar(true);
@@ -1657,8 +1681,55 @@ function startKitchenPoll(){
     refreshKitchenOrders();
   }, 5000);
 }
+let TG = null, tgPoll = null;
+async function loadTelegram(){
+  try{
+    const r = await fetch('/api/telegram/status');
+    if(!r.ok) return;
+    const j = await r.json();
+    const changed = !TG || TG.connected !== j.connected || TG.enabled !== j.enabled;
+    TG = j;
+    if(changed && activeTab === 'kitchen') renderAdmin();
+  }catch(e){}
+}
+function telegramCardHtml(){
+  if(!TG || !TG.enabled) return '';
+  return `
+    <div class="section-card">
+      <h3>Phone alerts</h3>
+      ${TG.connected
+        ? `<p class="sc-desc">Connected. Every new order is sent to your Telegram, and you get a reminder every 2 minutes while nobody has accepted it.</p>
+           <div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn small" id="tgTest">Send test message</button><button class="btn small secondary" id="tgOff">Disconnect</button></div>`
+        : `<p class="sc-desc">Get a message on your phone for every new order, even when this screen is locked. Press the button, then press Start in Telegram. This page updates by itself.</p>
+           <button class="btn small" id="tgConnect">Connect Telegram</button>`}
+    </div>`;
+}
+function wireTelegram(){
+  const c = document.getElementById('tgConnect'), t = document.getElementById('tgTest'), d = document.getElementById('tgOff');
+  if(c) c.addEventListener('click', async ()=>{
+    const w = window.open('', '_blank');
+    try{
+      const r = await fetch('/api/telegram/link', { method:'POST' });
+      const j = await r.json();
+      if(!r.ok) throw new Error(j.error || 'failed');
+      if(w){ w.location.href = j.url; } else { toast('Allow pop-ups, or open this link: ' + j.url); }
+      toast('Press Start in Telegram, then come back here.');
+      clearInterval(tgPoll); let n = 0;
+      tgPoll = setInterval(async ()=>{ n++; await loadTelegram(); if((TG && TG.connected) || n > 40) clearInterval(tgPoll); }, 3000);
+    }catch(e){ if(w) w.close(); toast(e.message || 'Could not start the connection. Try again.'); }
+  });
+  if(t) t.addEventListener('click', async ()=>{
+    try{ const r = await fetch('/api/telegram/test', { method:'POST' }); if(!r.ok) throw new Error('x'); toast('Test message sent. Check Telegram.'); }
+    catch(e){ toast('Could not send the test message.'); }
+  });
+  if(d) d.addEventListener('click', async ()=>{
+    await fetch('/api/telegram/link', { method:'DELETE' }); await loadTelegram();
+  });
+}
 function attachKitchenHandlers(){
   startKitchenPoll();
+  if(TG === null) loadTelegram();
+  wireTelegram();
   wireCancelButtons();
   wireHistory();
   document.querySelectorAll('.status-btn').forEach(btn=>{

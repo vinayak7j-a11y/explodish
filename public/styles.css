@@ -619,5 +619,15 @@ body.scrolled .tabs{
 @media (max-width:560px){
   .field-row{grid-template-columns:1fr;}
 }
-body:has(.pro-sound:not([hidden])){padding-bottom:calc(84px + env(safe-area-inset-bottom,0px));}
+body:has(.pro-sound-bar:not([hidden])){padding-bottom:calc(84px + env(safe-area-inset-bottom,0px));}
 .pro .ticket .btn.secondary{background:transparent;color:var(--ink);border:1px solid var(--paper-line);}
+
+/* kitchen tickets */
+.ticket-card .ticket-head{align-items:baseline;flex-wrap:wrap;gap:4px 12px;}
+.ticket-card .th-table{font-size:22px;font-weight:900;letter-spacing:.04em;color:var(--ink);}
+.ticket-card .ticket-line strong{font-size:19px;}
+.ticket-card .tl-mod{font-size:17px;font-weight:800;text-transform:uppercase;letter-spacing:.02em;}
+.ticket-card .tl-mod.mod-remove{color:#c62828;}
+.ticket-card .tl-mod.mod-add{color:#1b7f43;}
+.ticket-card .tl-mod.mod-other{color:#6b4a1e;}
+.kbadge{margin-left:8px;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:#e53935;color:#fff;font-size:12px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;}
