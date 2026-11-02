@@ -41,6 +41,11 @@ CREATE TABLE IF NOT EXISTS telegram_links (
 );
 `);
 
+/* step 1.4: prep time setting (idempotent migration) */
+if (!db.prepare('PRAGMA table_info(restaurants)').all().some(c => c.name === 'prep_minutes')) {
+  db.exec('ALTER TABLE restaurants ADD COLUMN prep_minutes INTEGER');
+}
+
 const toRestaurant = r => r && ({
   id: r.id, slug: r.slug, name: r.name, email: r.email,
   passwordHash: r.password_hash, active: !!r.active, createdAt: r.created_at
@@ -122,10 +127,28 @@ module.exports = {
   setTelegramChat: (rid, chatId) => db.prepare('INSERT INTO telegram_links (restaurant_id, chat_id, linked_at) VALUES (?, ?, ?) ON CONFLICT(restaurant_id) DO UPDATE SET chat_id = excluded.chat_id, linked_at = excluded.linked_at').run(rid, String(chatId), new Date().toISOString()),
   clearTelegramChat: rid => db.prepare('DELETE FROM telegram_links WHERE restaurant_id = ?').run(rid),
   listTelegramRestaurants: () => db.prepare('SELECT restaurant_id FROM telegram_links').all().map(r => r.restaurant_id),
+  getPrepMinutes: rid => { const r = db.prepare('SELECT prep_minutes FROM restaurants WHERE id = ?').get(rid); return r && r.prep_minutes ? r.prep_minutes : null; },
+  setPrepMinutes: (rid, n) => db.prepare('UPDATE restaurants SET prep_minutes = ? WHERE id = ?').run(n, rid),
+  /* Friendly order number: 1, 2, 3 ... restarting each day (in the report time zone). */
+  nextOrderNumber: (rid, tz) => {
+    const day = t => new Date(t).toLocaleDateString('en-CA', { timeZone: tz });
+    const today = day(Date.now());
+    const since = new Date(Date.now() - 36 * 3600 * 1000).toISOString();
+    const rows = db.prepare('SELECT time, data FROM orders WHERE restaurant_id = ? AND time >= ?').all(rid, since)
+      .filter(r => day(r.time) === today);
+    let max = 0;
+    for (const r of rows) { const n = Number(JSON.parse(r.data).number); if (n > max) max = n; }
+    return Math.max(max, rows.length) + 1;
+  },
   setOrderStatus: (id, rid, status) => {
     const row = q.ordById.get(String(id));
     if (!row || row.restaurant_id !== rid) return null;
-    const data = JSON.stringify({ ...JSON.parse(row.data), status });
+    const prev = JSON.parse(row.data);
+    const next = { ...prev, status };
+    const stamp = new Date().toISOString();
+    if (status === 'preparing' && !prev.preparingAt) next.preparingAt = stamp;
+    if (status === 'ready' && !prev.readyAt) next.readyAt = stamp;
+    const data = JSON.stringify(next);
     q.updOrder.run(data, row.id, rid);
     return orderFromRow({ ...row, data });
   }

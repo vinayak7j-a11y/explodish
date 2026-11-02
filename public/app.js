@@ -1561,7 +1561,7 @@ function kitchenViewBase(){
       const mins = Math.max(0, Math.round((Date.now() - new Date(o.time).getTime())/60000));
       return `
     <div class="ticket ticket-card">
-      <div class="ticket-head"><span class="th-table">${o.table ? `TABLE ${escapeHtml(String(o.table))}` : 'NO TABLE'}</span><span>Order ${o.id} \u00b7 ${new Date(o.time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})} \u00b7 ${mins} min ago</span></div>
+      <div class="ticket-head"><span class="th-table">${o.table ? `TABLE ${escapeHtml(String(o.table))}` : 'NO TABLE'}</span><span>Order ${o.number ? '#' + o.number : o.id} \u00b7 ${new Date(o.time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})} \u00b7 ${mins} min ago</span></div>
       ${o.items.map(it=>`
         <div class="ticket-line"><strong>${escapeHtml(it.dishName)}</strong></div>
         ${it.mods.map(m=>`<div class="ticket-line tl-mod ${modClass(m)}">${escapeHtml(m)}</div>`).join('')}
@@ -1585,6 +1585,7 @@ function kitchenViewBase(){
       ${recentTickets || '<div class="empty">No orders yet.</div>'}
     </div>
 
+    ${timingCardHtml()}
     ${telegramCardHtml()}
     <div class="section-card">
       <h3>Today at a glance</h3>
@@ -1682,6 +1683,44 @@ function startKitchenPoll(){
   }, 5000);
 }
 let TG = null, tgPoll = null;
+var PREP_MIN = undefined;
+async function loadPrep(){
+  try{
+    const r = await fetch('/api/settings');
+    if(!r.ok) return;
+    const j = await r.json();
+    PREP_MIN = j.prepMinutes || null;
+    if(activeTab === 'kitchen') renderAdmin();
+  }catch(e){}
+}
+function timingCardHtml(){
+  if(PREP_MIN === undefined) return '';
+  return `
+    <div class="section-card">
+      <h3>Waiting time</h3>
+      <p class="sc-desc">About how many minutes your kitchen usually needs. Customers see "Ready in about N min" after you press Start preparing. Leave it empty to show no time.</p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <div class="field" style="margin:0;"><input type="number" id="prepInput" min="1" max="120" inputmode="numeric" style="width:90px;" value="${PREP_MIN || ''}"></div>
+        <span>minutes</span>
+        <button class="btn small" id="prepSave">Save</button>
+      </div>
+    </div>`;
+}
+function wireTiming(){
+  const b = document.getElementById('prepSave');
+  if(!b) return;
+  b.addEventListener('click', async ()=>{
+    const raw = document.getElementById('prepInput').value.trim();
+    const body = { prepMinutes: raw === '' ? null : Number(raw) };
+    try{
+      const r = await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok){ toast(j.error || 'Could not save'); return; }
+      PREP_MIN = j.prepMinutes || null;
+      toast(PREP_MIN ? 'Saved. Customers will see about ' + PREP_MIN + ' min.' : 'Saved. No time is shown to customers.');
+    }catch(e){ toast('Could not save. Check your connection.'); }
+  });
+}
 async function loadTelegram(){
   try{
     const r = await fetch('/api/telegram/status');
@@ -1729,6 +1768,8 @@ function wireTelegram(){
 function attachKitchenHandlers(){
   startKitchenPoll();
   if(TG === null) loadTelegram();
+  if(PREP_MIN === undefined) loadPrep();
+  wireTiming();
   wireTelegram();
   wireCancelButtons();
   wireHistory();
@@ -1776,32 +1817,76 @@ function myOrders(){
 }
 function saveMyOrders(list){ try{ localStorage.setItem(ordersKey(), JSON.stringify(list.slice(-3))); }catch(e){} }
 function forgetOrder(id){ saveMyOrders(myOrders().filter(o=>o.id!==id)); }
-function showOrderBanner(id, status){
+/* progress-track v1 */
+function orderStepIndex(s){ return s==='new' ? 0 : s==='preparing' ? 1 : s==='ready' ? 2 : s==='done' ? 3 : -1; }
+function minutesLeftText(sec){
+  if(sec <= 0) return 'Taking a little longer than usual';
+  let m = Math.ceil(sec/60);
+  if(m <= 1) return 'Almost ready';
+  if(m > 10) m = Math.ceil(m/5)*5;
+  return 'Ready in about ' + m + ' min';
+}
+function orderMessage(status, info){
+  const prep = info.prepMinutes;
+  if(status==='new'){
+    if(info.ageSec != null && info.waiterAfterSec && info.ageSec >= info.waiterAfterSec)
+      return 'Still waiting for the kitchen. A waiter will come to your table soon.';
+    return 'Waiting for the kitchen to accept your order.' + (prep ? ' Usually ready about ' + prep + ' min after they start.' : '');
+  }
+  if(status==='preparing'){
+    if(prep && info.preparingAgeSec != null) return minutesLeftText(prep*60 - info.preparingAgeSec);
+    return 'The kitchen is preparing your order.';
+  }
+  if(status==='ready') return 'Your order is ready!';
+  if(status==='done') return 'Served. Enjoy your meal!';
+  if(status==='cancelled') return 'Order cancelled.';
+  return '';
+}
+function showOrderBanner(id, status, info){
+  info = info || {};
   let b = document.getElementById('orderBanner');
   if(!b){
     b = document.createElement('div');
     b.id = 'orderBanner';
     b.setAttribute('role','status');
-    b.style.cssText = 'position:fixed;left:12px;right:12px;top:calc(env(safe-area-inset-top,0px) + 10px);z-index:9999;max-width:520px;margin:0 auto;padding:10px 14px;border-radius:12px;background:var(--paper);color:var(--ink);box-shadow:var(--lift-2);font:600 14px var(--font-body);display:flex;gap:10px;align-items:center;justify-content:space-between;';
+    b.setAttribute('aria-live','polite');
+    b.style.cssText = 'position:fixed;left:12px;right:12px;top:calc(env(safe-area-inset-top,0px) + 10px);z-index:9999;max-width:520px;margin:0 auto;padding:12px 14px;border-radius:14px;background:var(--paper);color:var(--ink);box-shadow:var(--lift-2);font:600 14px var(--font-body);display:block;';
     document.body.appendChild(b);
   }
   b.textContent = '';
-  const t = document.createElement('span');
-  t.textContent = 'Order ' + id.slice(0,4).toUpperCase() + ' · ' + (STATUS_TEXT[status] || status);
+  const num = info.number ? '#' + info.number : id.slice(0,4).toUpperCase();
+  const tbl = (typeof CURRENT_TABLE !== 'undefined' && CURRENT_TABLE) ? ' \u00b7 Table ' + CURRENT_TABLE : '';
+
+  const head = document.createElement('div'); head.className = 'otrack-head';
+  const title = document.createElement('span'); title.className = 'otrack-title'; title.textContent = 'Order ' + num + tbl;
   const x = document.createElement('button');
-  x.type = 'button'; x.textContent = '✕'; x.setAttribute('aria-label','Dismiss');
-  x.style.cssText = 'border:0;background:transparent;color:inherit;font-size:16px;padding:4px 8px;';
+  x.type = 'button'; x.textContent = '\u2715'; x.setAttribute('aria-label','Dismiss'); x.className = 'otrack-x';
   x.addEventListener('click', ()=>{ forgetOrder(id); b.remove(); });
-  const parts = [t];
+  head.append(title, x);
+  b.appendChild(head);
+
+  const cur = orderStepIndex(status);
+  if(cur >= 0){
+    const ol = document.createElement('ol'); ol.className = 'otrack';
+    ol.setAttribute('aria-label', 'Order progress: ' + (STATUS_TEXT[status] || status));
+    ['Received','Preparing','Ready'].forEach((label, i)=>{
+      const li = document.createElement('li');
+      li.className = i < cur ? 'is-done' : (i === cur ? 'is-now' : '');
+      if(i === cur) li.setAttribute('aria-current','step');
+      const dot = document.createElement('span'); dot.className = 'otrack-dot'; dot.textContent = i < cur ? '\u2713' : String(i+1);
+      const lab = document.createElement('span'); lab.className = 'otrack-label'; lab.textContent = label;
+      li.append(dot, lab); ol.appendChild(li);
+    });
+    b.appendChild(ol);
+  }
+  const msg = document.createElement('div'); msg.className = 'otrack-msg'; msg.textContent = orderMessage(status, info);
+  b.appendChild(msg);
   if(status==='new'){
     const c = document.createElement('button');
-    c.type = 'button'; c.textContent = 'Cancel order';
-    c.style.cssText = 'border:1px solid currentColor;background:transparent;color:inherit;font-size:13px;padding:4px 10px;border-radius:8px;';
+    c.type = 'button'; c.textContent = 'Cancel order'; c.className = 'otrack-cancel';
     c.addEventListener('click', ()=> cancelMyOrder(id));
-    parts.push(c);
+    b.appendChild(c);
   }
-  parts.push(x);
-  b.append(...parts);
   b.dataset.until = (status==='done' || status==='cancelled') ? String(Date.now()+20000) : '0';
 }
 async function pollMyOrders(){
@@ -1814,7 +1899,7 @@ async function pollMyOrders(){
     if(r.status===404){ forgetOrder(last.id); return pollMyOrders(); }
     if(!r.ok) return;
     const data = await r.json();
-    showOrderBanner(last.id, data.status);
+    showOrderBanner(last.id, data.status, data);
     if(data.status==='done' || data.status==='cancelled') forgetOrder(last.id);
   }catch(e){ /* offline: try again next tick */ }
 }

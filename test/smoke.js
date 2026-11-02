@@ -121,6 +121,28 @@ async function run(slugHolder) {
   if (pending) pending.catch(() => {});
   ctl.abort();
 
+  console.log('\nOrder progress (step 1.4)');
+  const n1 = await call('POST', `/api/r/${slug}/orders`, orderFor(dish, 169));
+  const n2 = await call('POST', `/api/r/${slug}/orders`, orderFor(dish, 169));
+  check('orders get a friendly number that goes up', n1.json && n2.json && Number.isInteger(n1.json.number) && n2.json.number === n1.json.number + 1, JSON.stringify([n1.json && n1.json.number, n2.json && n2.json.number]));
+  const st1 = await call('GET', `/api/r/${slug}/orders/${n1.json.id}/status`);
+  check('status shows number, age and waiter time', st1.json && st1.json.number === n1.json.number && Number.isInteger(st1.json.ageSec) && st1.json.waiterAfterSec > 0 && st1.json.prepMinutes === null, JSON.stringify(st1.json));
+  const setNo = await call('PUT', '/api/settings', { prepMinutes: 12 }, false);
+  check('waiting time needs login (401)', setNo.status === 401, `status ${setNo.status}`);
+  for (const badVal of [0, 500, 'abc', 2.5, true, '']) {
+    const r = await call('PUT', '/api/settings', { prepMinutes: badVal }, true);
+    check('waiting time ' + JSON.stringify(badVal) + ' is refused (400)', r.status === 400, `status ${r.status}`);
+  }
+  const setOk = await call('PUT', '/api/settings', { prepMinutes: 12 }, true);
+  check('owner can set waiting time', setOk.status === 200 && setOk.json.prepMinutes === 12);
+  const st2 = await call('GET', `/api/r/${slug}/orders/${n1.json.id}/status`);
+  check('customer status shows the waiting time', st2.json && st2.json.prepMinutes === 12);
+  const acc = await call('PATCH', `/api/orders/${n1.json.id}/status`, { status: 'preparing' }, true);
+  const st3 = await call('GET', `/api/r/${slug}/orders/${n1.json.id}/status`);
+  check('accepting an order starts its preparing clock', acc.status === 200 && st3.json.status === 'preparing' && Number.isInteger(st3.json.preparingAgeSec), JSON.stringify(st3.json));
+  const clr = await call('PUT', '/api/settings', { prepMinutes: null }, true);
+  check('owner can clear the waiting time', clr.status === 200 && clr.json.prepMinutes === null);
+
   console.log('\nStatus flow');
   const prep = await call('PATCH', `/api/orders/${good.json.id}/status`, { status: 'preparing' }, true);
   check('owner can mark preparing', prep.status === 200 && prep.json.status === 'preparing');

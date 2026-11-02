@@ -386,6 +386,7 @@ app.post('/api/r/:slug/orders', rateLimit(200, 10 * 60 * 1000), (req, res) => {
   order.restaurantId = restaurant.id;
   order.time = new Date().toISOString();
   order.status = 'new'; // always starts as new, whatever the client sent
+  order.number = store.nextOrderNumber(restaurant.id, REPORT_TZ);
   store.insertOrder(order);
   notifyOrders(restaurant.id, 'new');
   telegram.notifyNewOrder(order, restaurant);
@@ -403,12 +404,36 @@ app.patch('/api/orders/:id/status', requireAuth, (req, res) => {
   res.json(order);
 });
 
+/* Owner setting: how many minutes the kitchen usually needs (shown to customers). */
+app.get('/api/settings', requireAuth, (req, res) => {
+  res.json({ prepMinutes: store.getPrepMinutes(req.restaurantId) });
+});
+app.put('/api/settings', requireAuth, (req, res) => {
+  const v = req.body && req.body.prepMinutes;
+  if (v === null) { store.setPrepMinutes(req.restaurantId, null); return res.json({ prepMinutes: null }); }
+  const n = Number(v);
+  if (v === '' || typeof v === 'boolean' || !Number.isInteger(n) || n < 1 || n > 120) {
+    return res.status(400).json({ error: 'Enter whole minutes between 1 and 120' });
+  }
+  store.setPrepMinutes(req.restaurantId, n);
+  res.json({ prepMinutes: n });
+});
+
 /* A customer can check how their own order is going (no login; needs the order's random id). */
 app.get('/api/r/:slug/orders/:id/status', rateLimit(200, 10 * 60 * 1000), (req, res) => {
   const restaurant = activeBySlug(req.params.slug);
   const order = restaurant && store.getOrder(req.params.id);
   if (!order || order.restaurantId !== restaurant.id) return res.status(404).json({ error: 'Order not found' });
-  res.json({ status: order.status || 'new' });
+  const now = Date.now();
+  const secs = t => (t ? Math.max(0, Math.floor((now - new Date(t).getTime()) / 1000)) : null);
+  res.json({
+    status: order.status || 'new',
+    number: order.number || null,
+    ageSec: secs(order.time),
+    preparingAgeSec: secs(order.preparingAt),
+    prepMinutes: store.getPrepMinutes(restaurant.id),
+    waiterAfterSec: Number(process.env.WAITER_AFTER_SEC) || 180
+  });
 });
 
 /* A customer can cancel their own order, but only before the kitchen starts it. */
