@@ -458,26 +458,41 @@ function renderExplodedStack(dish, config, opts){
   const w = opts.compact ? 88 : 116;
   const baseH = opts.compact ? 15 : 19;
   const midH = Math.max(baseH-3, 9);
+  /* layer-art v2 */
   let y = 0;
   const discs = [];
-  if(bunLayer){ discs.push({y, w, h:baseH+2, name:bunLayer.ing.name, id:bunLayer.ing.id, qty:1}); y += baseH*0.68; }
-  layers.forEach(x=>{ discs.push({y, w:w-8, h:midH, name:x.ing.name, id:x.ing.id, qty:x.qty}); y += midH*0.82; });
-  if(bunLayer){ discs.push({y, w, h:baseH+2, name:bunLayer.ing.name, id:bunLayer.ing.id, qty:1}); y += baseH*0.68; }
-  const totalH = y + baseH;
+  const sc = w / 120;
+  const put = (key, role, o)=>{
+    const h = layerHeightV2(key, role, o.name) * sc, lw = layerWidthV2(key, role, o.name) * w;
+    discs.push({ y, w: lw, h, name: o.name, id: o.id, qty: o.qty });
+    y += h * 0.62;
+  };
+  if(bunLayer) put('bun', 'top', { name: bunLayer.ing.name, id: bunLayer.ing.id, qty: 1 });
+  layers.forEach(x=> put(matchIngredientVisual(x.ing.name), '', { name: x.ing.name, id: x.ing.id, qty: x.qty }));
+  if(bunLayer) put('bun', 'bottom', { name: bunLayer.ing.name, id: bunLayer.ing.id, qty: 1 });
+  const totalH = y + discs[discs.length - 1].h * 0.38;
 
+  const prev = (opts.interactive && window.__stackPrev && window.__stackPrev.id === dish.id) ? window.__stackPrev.q : null;
+  const nowQ = {};
   const draggable = opts.interactive ? 'draggable-disc' : '';
   const inner = discs.map((L,i)=>{
     const v = INGREDIENT_VISUALS[matchIngredientVisual(L.name)];
     const badge = L.qty>1 ? `<span class="stack-badge">${L.qty}</span>` : '';
-    return `<div class="stack-disc ${draggable}" data-ing="${L.id}" style="--si:${i};top:${L.y}px;left:${(w-L.w)/2}px;width:${L.w}px;height:${L.h}px;">${layerArt(L, v, i, discs.length)}${badge}</div>`;
+    nowQ[L.id] = L.qty;
+    const isNew = opts.interactive && (!prev || (prev[L.id] || 0) < L.qty);
+    return `<div class="stack-disc ${draggable}${isNew ? ' pop' : ''}" data-ing="${L.id}" style="--si:${i};--pd:${prev ? 0 : i * 55}ms;z-index:${discs.length - i};top:${L.y}px;left:${(w-L.w)/2}px;width:${L.w}px;height:${L.h}px;">${layerArt(L, v, i, discs.length)}${badge}</div>`;
   }).join('');
+  if(opts.interactive) window.__stackPrev = { id: dish.id, q: nowQ };
+  const fit = Math.max(1, Math.min(1.8, 282 / totalH));
+  const cfit = Math.min(1.15, 112 / totalH); // menu card: shrink tall stacks so they are never cut off
 
-  return `<div class="stack-wrap" style="height:${totalH}px;width:${w}px;">${inner}</div>`;
+  return `<div class="stack-wrap" style="height:${totalH}px;width:${w}px;--fit:${fit.toFixed(2)};--cfit:${cfit.toFixed(2)};">${inner}</div>`;
 }
 
 function renderModeBIcon(dish){
   const n = ((dish.category||'') + ' ' + (dish.name||'')).toLowerCase();
   const isDrink = /mocktail|drink|juice|cooler|shake|smoothie|lassi/.test(n);
+  if(typeof modeBArtV2 === 'function') return `<div class="bowl-wrap">${modeBArtV2(dish)}</div>`;
   return `<div class="bowl-wrap">${isDrink ? '<div class="glass-icon"></div>' : '<div class="bowl-icon"></div>'}</div>`;
 }
 
@@ -607,6 +622,7 @@ let currentDetail = null; // {dish, config, deltas}
 function openDetail(dishId){
   const dish = DISHES.find(d=>d.id===dishId);
   if(!dish) return;
+  window.__stackPrev = null; // so the build-up animation plays each time a dish opens
   let config;
   if(dish.mode==='A'){
     config = defaultQtyConfig(dish);
@@ -2121,6 +2137,6 @@ function layerArt(L, v, i, count){
     c = { top:`hsl(${h} 60% 76%)`, mid:`hsl(${h} 50% 60%)`, deep:`hsl(${h} 45% 38%)` };
   }
   const role = key==='bun' ? (i===0 ? 'top' : (i===count-1 ? 'bottom' : 'slab')) : '';
-  const shape = layerShape(key, c, role, L.name);
+  const shape = (typeof layerShapeV2 === 'function') ? layerShapeV2(key, c, role, L.name) : layerShape(key, c, role, L.name);
   return `<svg class="layer-art" viewBox="${shape[0]}" preserveAspectRatio="none" aria-hidden="true" focusable="false">${shape[1]}</svg>${layerImgHtml(L, key, role)}`;
 }

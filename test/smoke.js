@@ -158,6 +158,12 @@ async function run(slugHolder) {
     check(label + ' is served', f.status === 200, `${url} status ${f.status}`);
   }
 
+  console.log('\nDish artwork');
+  const la = await fetch(BASE + '/layerart.js');
+  check('new artwork script is served', la.status === 200 && /layerShapeV2/.test(await la.text()), `status ${la.status}`);
+  const ix = await fetch(BASE + '/r/' + slug);
+  check('customer page loads the artwork before app.js', /layerart\.js[\s\S]*app\.js/.test(await ix.text()));
+
   console.log('\nStatus flow');
   const prep = await call('PATCH', `/api/orders/${good.json.id}/status`, { status: 'preparing' }, true);
   check('owner can mark preparing', prep.status === 200 && prep.json.status === 'preparing');

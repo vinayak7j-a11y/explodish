@@ -685,3 +685,23 @@ body:has(.pro-sound-bar:not([hidden])){padding-bottom:calc(84px + env(safe-area-
 #importCard .imp-ignored div{padding:3px 0;}
 #importCard .imp-ignored span{opacity:.7;margin-left:6px;}
 @media (max-width:480px){#importCard .imp-row{grid-template-columns:28px minmax(0,1fr) 74px 28px;}}
+
+/* layer-art v2 */
+.detail-stack-stage{height:310px;}
+.detail-stack-stage .stack-stage-inner{transform:none;}
+.detail-stack-stage .stack-wrap{transform:scale(var(--fit,1.4));transform-origin:50% 50%;}
+.detail-stack-stage .stack-wrap::after{content:"";position:absolute;left:4%;right:4%;bottom:-12px;height:18px;border-radius:50%;background:radial-gradient(ellipse at center,rgba(0,0,0,.6),transparent 70%);z-index:0;pointer-events:none;}
+.pro .dish-card .dc-render .stack-wrap{transform:perspective(520px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) scale(var(--cfit,1));}
+.stack-disc .layer-art{filter:drop-shadow(0 4px 3px rgba(0,0,0,.36));}
+@keyframes layerPop{0%{opacity:0;transform:translateY(-34px) scale(.84);}55%{opacity:1;transform:translateY(4px) scale(1.04);}100%{opacity:1;transform:none;}}
+.stack-disc.pop{animation:layerPop .55s cubic-bezier(.34,1.56,.64,1) var(--pd,0ms) backwards;}
+@media (prefers-reduced-motion:reduce){.stack-disc.pop{animation:none;}}
+.modeb-art{width:132px;height:107px;display:block;overflow:visible;filter:drop-shadow(0 4px 4px rgba(0,0,0,.25));}
+.stack-stage-inner .modeb-art{width:210px;height:170px;}
+.modeb-art .steam path{stroke-dasharray:60;animation:steamUp 3.2s ease-in-out infinite;}
+.modeb-art .steam path:nth-child(2){animation-delay:-1s;}
+.modeb-art .steam path:nth-child(3){animation-delay:-2s;}
+@keyframes steamUp{0%{stroke-dashoffset:60;opacity:0;}30%{opacity:.5;}100%{stroke-dashoffset:-60;opacity:0;}}
+.modeb-art .drip{animation:bubble 2.4s ease-in-out infinite;}
+@keyframes bubble{0%,100%{transform:translateY(0);opacity:.6;}50%{transform:translateY(-6px);opacity:.15;}}
+@media (prefers-reduced-motion:reduce){.modeb-art .steam path,.modeb-art .drip{animation:none;}}
