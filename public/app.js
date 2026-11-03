@@ -164,6 +164,7 @@ let tableQrCount = 12;
 let showTableQrGrid = false;
 let CURRENT_RESTAURANT = null; // set once logged in on the admin route
 let PUBLIC_SLUG = null; // set on the customer route
+const PREVIEW = new URLSearchParams(window.location.search).has('preview'); // owner's phone-frame preview: ordering is off
 
 /* Table QR entry point: a table's QR code just links to this same page with
    ?table=N appended. Whatever table number is in the URL travels with any
@@ -228,6 +229,7 @@ async function bootCustomer(){
   }
   setMasthead(restaurant.name, 'Open a dish. See inside it. Build it your way.');
   showTableChip();
+  if(PREVIEW && typeof showPreviewBanner === 'function') showPreviewBanner();
   try{
     DISHES = await apiGetPublicDishes(PUBLIC_SLUG);
   }catch(e){
@@ -1071,6 +1073,7 @@ function toggleCartPanel(){
 
 let placingOrder = false;
 async function placeOrder(){
+  if(PREVIEW){ toast('Preview only. Ordering is switched off here.'); return; }
   if(placingOrder || !CART.length) return;
   placingOrder = true;
   const btn = document.getElementById('placeOrderBtn');
@@ -1133,6 +1136,7 @@ function ownerView(){
 
   return `
     ${importCardHtml()}
+    ${typeof previewCardHtml === 'function' ? previewCardHtml() : ''}
     <div class="section-card manual-sec">
       <h3>1 · Photo &amp; basics</h3>
       <div class="sc-desc">Upload a photo and name the dish. A clean, top-down or 3/4 shot works best.</div>
@@ -1321,6 +1325,7 @@ function renderIngredientRowsB(){
 
 function attachOwnerHandlers(){
   wireImport();
+  if(typeof wirePreview === 'function') wirePreview();
   document.getElementById('photoInput').addEventListener('change', (e)=>{
     const file = e.target.files[0];
     if(!file) return;
@@ -1812,7 +1817,7 @@ function attachKitchenHandlers(){
 
 
 /* ---------- Customer conveniences: saved cart, order status, fresh menu ---------- */
-function cartSlug(){ const m = /^\/r\/([^\/?#]+)/.exec(location.pathname); return m ? m[1] : null; }
+function cartSlug(){ if(PREVIEW) return null; const m = /^\/r\/([^\/?#]+)/.exec(location.pathname); return m ? m[1] : null; }
 function loadCart(){
   try{
     const slug = cartSlug(); if(!slug) return [];

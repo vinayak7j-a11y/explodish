@@ -30,7 +30,7 @@ const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10); // keeps login ti
 /* ---------- Basic hardening ---------- */
 app.use((req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
-  res.set('X-Frame-Options', 'DENY');
+  res.set('X-Frame-Options', 'SAMEORIGIN'); // only this site may frame itself (the owner's menu preview); other sites still cannot
   res.set('Referrer-Policy', 'same-origin');
   next();
 });

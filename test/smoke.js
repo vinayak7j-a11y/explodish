@@ -164,6 +164,13 @@ async function run(slugHolder) {
   const ix = await fetch(BASE + '/r/' + slug);
   check('customer page loads the artwork before app.js', /layerart\.js[\s\S]*app\.js/.test(await ix.text()));
 
+  console.log('\nMenu preview');
+  const pvp = await fetch(BASE + '/menupreview.js');
+  check('preview script is served', pvp.status === 200 && /previewCardHtml/.test(await pvp.text()), `status ${pvp.status}`);
+  const pvh = await fetch(BASE + '/r/' + slug + '?preview=1');
+  check('preview page opens like the customer page', pvh.status === 200);
+  check('only this site may frame the app', pvh.headers.get('x-frame-options') === 'SAMEORIGIN', String(pvh.headers.get('x-frame-options')));
+
   console.log('\nStatus flow');
   const prep = await call('PATCH', `/api/orders/${good.json.id}/status`, { status: 'preparing' }, true);
   check('owner can mark preparing', prep.status === 200 && prep.json.status === 'preparing');

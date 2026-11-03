@@ -705,3 +705,8 @@ body:has(.pro-sound-bar:not([hidden])){padding-bottom:calc(84px + env(safe-area-
 .modeb-art .drip{animation:bubble 2.4s ease-in-out infinite;}
 @keyframes bubble{0%,100%{transform:translateY(0);opacity:.6;}50%{transform:translateY(-6px);opacity:.15;}}
 @media (prefers-reduced-motion:reduce){.modeb-art .steam path,.modeb-art .drip{animation:none;}}
+
+/* menu-preview v1 */
+#previewCard .pv-phone{width:100%;max-width:396px;margin:14px auto 4px;border-radius:34px;border:9px solid #0b0806;background:#000;box-shadow:0 14px 44px rgba(0,0,0,.55);overflow:hidden;}
+#previewCard .pv-phone iframe{display:block;width:100%;height:720px;border:0;background:#0d0906;}
+#previewCard .pv-empty{margin-top:12px;padding:18px;border:1px dashed rgba(255,255,255,.25);border-radius:12px;text-align:center;font-size:14px;opacity:.85;}
