@@ -6,11 +6,12 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node test/smoke.js && node test/telegram.js"
+    "test": "node test/smoke.js && node test/telegram.js && node test/menuparse.js"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.3.0",
     "@fontsource-variable/inter": "^5.3.0",
+    "@tesseract.js-data/eng": "^1.0.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.11.1",
     "canvas-confetti": "^1.9.4",
@@ -19,6 +20,8 @@
     "jsonwebtoken": "^9.0.3",
     "motion": "^14.6.0",
     "qrcode": "^1.5.4",
-    "sortablejs": "^1.15.7"
+    "sortablejs": "^1.15.7",
+    "tesseract.js": "^7.0.0",
+    "tesseract.js-core": "^7.0.0"
   }
 }

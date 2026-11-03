@@ -318,7 +318,7 @@ function renderAdmin(){
   const panel = document.getElementById('panel');
   syncNewCount();
   startKitchenPoll();
-  if(activeTab==='owner'){ panel.innerHTML = ownerView(); attachOwnerHandlers(); }
+  if(activeTab==='owner'){ panel.dataset.manual = manualOpen() ? 'on' : 'off'; panel.innerHTML = ownerView(); attachOwnerHandlers(); }
   else { panel.innerHTML = kitchenView(); attachKitchenHandlers(); }
   panel.classList.remove('entering');
   triggerReflow(panel);
@@ -514,6 +514,7 @@ function customerView(){
     if(activeCategory!=='All' && d.category!==activeCategory) return false;
     if(activeDietary==='Veg' && d.dietary==='non-veg') return false;
     if(activeDietary==='Non-veg' && d.dietary!=='non-veg') return false;
+    if((jainOnly || excludedAllergens.size) && d.needsReview) return false; // unchecked imports cannot claim Jain or allergen-free
     if(jainOnly && !d.jainFriendly) return false;
     if(excludedAllergens.size){
       const da = dishAllergens(d);
@@ -1105,8 +1106,9 @@ function ownerView(){
       ${d.image? `<img src="${d.image}">` : `<div class="ph"></div>`}
       <div style="flex:1;">
         <div class="dname">${dietaryDotHtml(d)}${escapeHtml(d.name)}<span class="badge">${d.mode==='A'?'Layered':'Ingredient view'}</span>${d.soldOut ? '<span class="badge" style="background:var(--rust);color:#fff;">Sold out</span>' : ''}</div>
-        <div class="dmeta">${fmt(d.basePrice)} · ${d.ingredients.length} ingredients tagged</div>
+        <div class="dmeta">${fmt(d.basePrice)} · ${d.ingredients.length} ingredients tagged${d.needsReview ? ' · <strong style="color:var(--brass);">Check ingredients</strong>' : ''}</div>
       </div>
+      ${d.needsReview ? '<button class="btn small mark-checked">Mark checked</button>' : ''}
       <button class="btn secondary small soldout-dish">${d.soldOut ? 'Mark available' : 'Mark sold out'}</button>
       <button class="btn secondary small edit-dish">Edit</button>
       <button class="btn secondary small delete-dish" style="color:var(--rust);">Delete</button>
@@ -1114,7 +1116,8 @@ function ownerView(){
   `).join('');
 
   return `
-    <div class="section-card">
+    ${importCardHtml()}
+    <div class="section-card manual-sec">
       <h3>1 · Photo &amp; basics</h3>
       <div class="sc-desc">Upload a photo and name the dish. A clean, top-down or 3/4 shot works best.</div>
       <div class="photo-upload">
@@ -1143,7 +1146,7 @@ function ownerView(){
       </div>
     </div>
 
-    <div class="section-card">
+    <div class="section-card manual-sec">
       <h3>2 · Pricing &amp; view</h3>
       <div class="sc-desc">Set the base price, the removal rule, and how customers see this dish.</div>
       <div class="field-row">
@@ -1171,7 +1174,7 @@ function ownerView(){
       </div>
     </div>
 
-    <div class="section-card">
+    <div class="section-card manual-sec">
       <h3>3 · ${ownerDraft.mode==='A' ? 'Layers' : 'Ingredients'}</h3>
       <div class="sc-desc">${ownerDraft.mode==='A' ? 'Every layer a customer can see and adjust.' : "Everything that's in the dish."}</div>
       <div class="field" style="margin-bottom:14px;"><label>Start from a template (optional)</label>
@@ -1180,14 +1183,14 @@ function ownerView(){
       <button class="btn btn-add small" id="addIngredientBtn" style="margin-top:12px;">+ Add ${ownerDraft.mode==='A'?'layer':'ingredient'}</button>
     </div>
 
-    <div class="section-card">
+    <div class="section-card manual-sec">
       <h3>4 · Modifiers <span style="font-weight:400;font-size:11.5px;color:var(--ink-soft);">(optional)</span></h3>
       <div class="sc-desc">Non-ingredient choices like spice level or portion size. The first option in each group is what customers start with by default.</div>
       <div id="modifierList">${renderModifierGroups()}</div>
       <button class="btn btn-add small" id="addModifierBtn" style="margin-top:12px;">+ Add modifier group</button>
     </div>
 
-    <div style="margin-bottom:28px;display:flex;gap:10px;">
+    <div class="manual-sec" style="margin-bottom:28px;display:flex;gap:10px;">
       <button class="btn" id="saveDishBtn">${ownerDraft.id ? 'Save changes' : 'Publish to menu'}</button>
       <button class="btn secondary" id="resetDraftBtn">Clear form</button>
     </div>
@@ -1301,6 +1304,7 @@ function renderIngredientRowsB(){
 }
 
 function attachOwnerHandlers(){
+  wireImport();
   document.getElementById('photoInput').addEventListener('change', (e)=>{
     const file = e.target.files[0];
     if(!file) return;
@@ -1510,6 +1514,7 @@ async function saveDraft(){
 
   const clean = JSON.parse(JSON.stringify(ownerDraft));
   clean.basePrice = parseFloat(clean.basePrice);
+  clean.needsReview = false; // saved by hand means checked
   if(clean.mode==='B') clean.ingredients.forEach(i=>{ if(!i.swappable){ i.swappable = false; i.swapOptions = []; } });
 
   try{

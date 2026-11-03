@@ -39,6 +39,11 @@ app.use(cookieParser());
    after the caller is logged in. Everything else is capped at 100kb. */
 app.use('/api/dishes', requireAuth, express.json({ limit: '12mb' }));
 app.use(express.json({ limit: '100kb' }));
+/* Photo reading (Tesseract.js) is served from node_modules, so there is nothing to copy. */
+const OCR_OPTS = { maxAge: '30d', fallthrough: true };
+app.use('/vendor/ocr/core', express.static(path.join(__dirname, 'node_modules', 'tesseract.js-core'), OCR_OPTS));
+app.use('/vendor/ocr/lang', express.static(path.join(__dirname, 'node_modules', '@tesseract.js-data', 'eng', '4.0.0_best_int'), OCR_OPTS));
+app.use('/vendor/ocr', express.static(path.join(__dirname, 'node_modules', 'tesseract.js', 'dist'), OCR_OPTS));
 app.use(express.static(path.join(__dirname, 'public')));
 
 /* Tiny in-memory rate limiter (per IP + route). Set TRUST_PROXY=1 when
@@ -163,6 +168,7 @@ function sanitizeDish(b) {
       removalRefund: !!b.removalRefund,
       dietary: 'veg',
       jainFriendly: !!b.jainFriendly,
+      needsReview: !!b.needsReview,
       ingredients: Array.isArray(b.ingredients) ? cleanValue(b.ingredients, 0, lim) : [],
       modifiers: Array.isArray(b.modifiers) ? cleanValue(b.modifiers, 0, lim) : []
     }

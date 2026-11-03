@@ -143,6 +143,21 @@ async function run(slugHolder) {
   const clr = await call('PUT', '/api/settings', { prepMinutes: null }, true);
   check('owner can clear the waiting time', clr.status === 200 && clr.json.prepMinutes === null);
 
+  console.log('\nMenu import');
+  const imp = await call('POST', '/api/dishes', Object.assign({}, burger, { name: 'Imported Burger', needsReview: true }), true);
+  check('a dish can be saved as "check ingredients"', (imp.status === 201 || imp.status === 200) && imp.json && imp.json.needsReview === true, `status ${imp.status}`);
+  if (imp.json && imp.json.id) {
+    const upd = await call('PUT', `/api/dishes/${imp.json.id}`, Object.assign({}, imp.json, { needsReview: false }), true);
+    check('marking it checked clears the flag', upd.status === 200 && upd.json.needsReview === false, `status ${upd.status}`);
+    await call('DELETE', `/api/dishes/${imp.json.id}`, undefined, true);
+  }
+  const nv = await call('POST', '/api/dishes', Object.assign({}, burger, { name: 'Chicken Burger' }), true);
+  check('non-veg dish is refused (400)', nv.status === 400, `status ${nv.status}`);
+  for (const [url, label] of [['/vendor/ocr/tesseract.min.js', 'photo reader script'], ['/vendor/ocr/worker.min.js', 'photo reader worker'], ['/vendor/ocr/core/tesseract-core-simd-lstm.wasm.js', 'photo reader engine'], ['/vendor/ocr/lang/eng.traineddata.gz', 'English text data']]) {
+    const f = await fetch(BASE + url);
+    check(label + ' is served', f.status === 200, `${url} status ${f.status}`);
+  }
+
   console.log('\nStatus flow');
   const prep = await call('PATCH', `/api/orders/${good.json.id}/status`, { status: 'preparing' }, true);
   check('owner can mark preparing', prep.status === 200 && prep.json.status === 'preparing');
