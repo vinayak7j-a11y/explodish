@@ -186,6 +186,16 @@ async function run(slugHolder) {
   const afterN = (await call('GET', '/api/orders', undefined, true)).json.length;
   check('the kitchen got exactly 4 new orders, not 5 (the retry was not doubled)', afterN - beforeN === 4, `before ${beforeN}, after ${afterN}`);
 
+  console.log('\nNotifications setup');
+  const sw = await fetch(BASE + '/sw.js');
+  check('service worker is served and never cached', sw.status === 200 && /no-cache/.test(sw.headers.get('cache-control') || '') && /push/.test(await sw.text()), `status ${sw.status}`);
+  const mf = await fetch(BASE + '/manifest.webmanifest');
+  check('app manifest is served', mf.status === 200 && /Explodish/.test(await mf.text()));
+  const ps0 = await call('GET', '/api/push/status', undefined, false);
+  check('notification status needs login (401)', ps0.status === 401, `status ${ps0.status}`);
+  const ps1 = await call('GET', '/api/push/status', undefined, true);
+  check('notifications are available and give a public key', ps1.status === 200 && ps1.json.enabled === true && ps1.json.publicKey.length > 60, JSON.stringify(ps1.json));
+
   console.log('\nStatus flow');
   const prep = await call('PATCH', `/api/orders/${good.json.id}/status`, { status: 'preparing' }, true);
   check('owner can mark preparing', prep.status === 200 && prep.json.status === 'preparing');

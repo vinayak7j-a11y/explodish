@@ -34,6 +34,11 @@ CREATE TABLE IF NOT EXISTS orders (
   data TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_orders_rest ON orders(restaurant_id);
+CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint TEXT PRIMARY KEY, restaurant_id TEXT NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL, label TEXT, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS push_subs_restaurant ON push_subscriptions (restaurant_id);
 CREATE TABLE IF NOT EXISTS telegram_links (
   restaurant_id TEXT PRIMARY KEY REFERENCES restaurants(id),
   chat_id TEXT NOT NULL,
@@ -123,6 +128,13 @@ module.exports = {
   insertOrder: o => q.insOrder.run(o.id, o.restaurantId, o.time, JSON.stringify(o)),
   listOrders: rid => q.ordersFor.all(rid).map(orderFromRow),
   getOrder: id => { const r = q.ordById.get(String(id)); return r ? orderFromRow(r) : null; },
+  getKv: k => { const r = db.prepare('SELECT value FROM kv WHERE key = ?').get(k); return r ? r.value : null; },
+  setKv: (k, v) => db.prepare('INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(k, String(v)),
+  addPushSub: (rid, endpoint, p256dh, auth, label) => db.prepare('INSERT INTO push_subscriptions (endpoint, restaurant_id, p256dh, auth, label, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET restaurant_id = excluded.restaurant_id, p256dh = excluded.p256dh, auth = excluded.auth, label = excluded.label').run(endpoint, rid, p256dh, auth, label || '', new Date().toISOString()),
+  listPushSubs: rid => db.prepare('SELECT endpoint, p256dh, auth, label FROM push_subscriptions WHERE restaurant_id = ?').all(rid),
+  removePushSub: endpoint => db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint),
+  removePushSubFor: (rid, endpoint) => db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ? AND restaurant_id = ?').run(endpoint, rid),
+  listPushRestaurants: () => db.prepare('SELECT DISTINCT restaurant_id FROM push_subscriptions').all().map(r => r.restaurant_id),
   getTelegramChat: rid => { const r = db.prepare('SELECT chat_id FROM telegram_links WHERE restaurant_id = ?').get(rid); return r ? r.chat_id : null; },
   setTelegramChat: (rid, chatId) => db.prepare('INSERT INTO telegram_links (restaurant_id, chat_id, linked_at) VALUES (?, ?, ?) ON CONFLICT(restaurant_id) DO UPDATE SET chat_id = excluded.chat_id, linked_at = excluded.linked_at').run(rid, String(chatId), new Date().toISOString()),
   clearTelegramChat: rid => db.prepare('DELETE FROM telegram_links WHERE restaurant_id = ?').run(rid),

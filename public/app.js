@@ -1627,6 +1627,7 @@ function kitchenViewBase(){
     </div>
 
     ${timingCardHtml()}
+    ${typeof pushCardHtml === 'function' ? pushCardHtml() : ''}
     ${telegramCardHtml()}
     <div class="section-card">
       <h3>Today at a glance</h3>
@@ -1811,6 +1812,7 @@ function attachKitchenHandlers(){
   if(TG === null) loadTelegram();
   if(PREP_MIN === undefined) loadPrep();
   wireTiming();
+  if(typeof wirePush === 'function'){ if(PUSH.state === null) loadPush(); wirePush(); }
   wireTelegram();
   wireCancelButtons();
   wireHistory();

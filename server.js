@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const store = require('./db');
 const telegram = require('./telegram');
+const push = require('./push');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -44,6 +45,12 @@ const OCR_OPTS = { maxAge: '30d', fallthrough: true };
 app.use('/vendor/ocr/core', express.static(path.join(__dirname, 'node_modules', 'tesseract.js-core'), OCR_OPTS));
 app.use('/vendor/ocr/lang', express.static(path.join(__dirname, 'node_modules', '@tesseract.js-data', 'eng', '4.0.0_best_int'), OCR_OPTS));
 app.use('/vendor/ocr', express.static(path.join(__dirname, 'node_modules', 'tesseract.js', 'dist'), OCR_OPTS));
+/* The service worker must never be cached, so a fix reaches phones quickly. */
+app.get('/sw.js', (req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.set('Service-Worker-Allowed', '/');
+  res.type('application/javascript').sendFile(path.join(__dirname, 'public', 'sw.js'));
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 /* Tiny in-memory rate limiter (per IP + route). Set TRUST_PROXY=1 when
@@ -406,6 +413,7 @@ app.post('/api/r/:slug/orders', rateLimit(200, 10 * 60 * 1000), (req, res) => {
   store.insertOrder(order);
   notifyOrders(restaurant.id, 'new');
   telegram.notifyNewOrder(order, restaurant);
+  push.notifyNewOrder(order, restaurant);
   res.status(201).json(order);
 });
 
@@ -495,6 +503,7 @@ app.get('/api/orders.csv', requireAuth, (req, res) => {
 });
 
 telegram.mount(app, { requireAuth, rateLimit });
+push.mount(app, { requireAuth, rateLimit });
 
 /* Live order updates: every logged-in kitchen screen keeps one open connection.
    When an order is placed, changed or cancelled, we tell that restaurant's screens to refresh. */
@@ -575,4 +584,5 @@ if (store.restaurantCount() === 0 && process.env.NODE_ENV !== 'production') {
 app.listen(PORT, () => {
   console.log(`Explodish menu app running at http://localhost:${PORT}`);
   telegram.start();
+  push.start();
 });
