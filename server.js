@@ -364,6 +364,16 @@ app.post('/api/r/:slug/orders', rateLimit(200, 10 * 60 * 1000), (req, res) => {
   order.upsell = order.items.reduce((s, it) => s + it.deltas.reduce((a, d) => a + Math.max(d.amount, 0), 0), 0);
   { const t = order.table == null ? '' : String(order.table).trim(); order.table = /^[A-Za-z0-9-]{1,8}$/.test(t) ? t : null; }
 
+  // Retry safety: the same order sent twice (after a bad connection) gets the first order back, never a second one.
+  const cid = typeof order.clientId === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(order.clientId) ? order.clientId : null;
+  if (cid) {
+    order.clientId = cid;
+    const prior = store.findOrderByClientId(restaurant.id, cid);
+    if (prior) return res.status(200).json(prior);
+  } else {
+    delete order.clientId;
+  }
+
   // Re-price every item from the saved menu. The phone's price is never trusted.
   const menu = new Map(store.listDishes(restaurant.id).map(d => [d.id, d]));
   for (const it of order.items) {

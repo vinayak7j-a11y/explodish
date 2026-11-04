@@ -171,6 +171,21 @@ async function run(slugHolder) {
   check('preview page opens like the customer page', pvh.status === 200);
   check('only this site may frame the app', pvh.headers.get('x-frame-options') === 'SAMEORIGIN', String(pvh.headers.get('x-frame-options')));
 
+  console.log('\nSafe retries (step 1.5)');
+  const beforeN = (await call('GET', '/api/orders', undefined, true)).json.length;
+  const cidA = 'retry-test-aaaa1111';
+  const r1 = await call('POST', `/api/r/${slug}/orders`, Object.assign({}, orderFor(dish, 169), { clientId: cidA }));
+  const r2 = await call('POST', `/api/r/${slug}/orders`, Object.assign({}, orderFor(dish, 169), { clientId: cidA }));
+  check('first send is created (201)', r1.status === 201, `status ${r1.status}`);
+  check('sending the same order again returns the first one (200, same id and number)', r2.status === 200 && r2.json.id === r1.json.id && r2.json.number === r1.json.number, JSON.stringify([r2.status, r2.json && r2.json.id, r1.json && r1.json.id]));
+  const r3 = await call('POST', `/api/r/${slug}/orders`, Object.assign({}, orderFor(dish, 169), { clientId: 'retry-test-bbbb2222' }));
+  check('a different attempt id makes a new order', r3.status === 201 && r3.json.id !== r1.json.id);
+  const r4 = await call('POST', `/api/r/${slug}/orders`, Object.assign({}, orderFor(dish, 169), { clientId: 'x' }));
+  const r5 = await call('POST', `/api/r/${slug}/orders`, Object.assign({}, orderFor(dish, 169), { clientId: 'x' }));
+  check('a malformed attempt id is ignored (two orders, no crash)', r4.status === 201 && r5.status === 201 && r4.json.id !== r5.json.id);
+  const afterN = (await call('GET', '/api/orders', undefined, true)).json.length;
+  check('the kitchen got exactly 4 new orders, not 5 (the retry was not doubled)', afterN - beforeN === 4, `before ${beforeN}, after ${afterN}`);
+
   console.log('\nStatus flow');
   const prep = await call('PATCH', `/api/orders/${good.json.id}/status`, { status: 'preparing' }, true);
   check('owner can mark preparing', prep.status === 200 && prep.json.status === 'preparing');

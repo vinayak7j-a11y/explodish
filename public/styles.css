@@ -710,3 +710,14 @@ body:has(.pro-sound-bar:not([hidden])){padding-bottom:calc(84px + env(safe-area-
 #previewCard .pv-phone{width:100%;max-width:396px;margin:14px auto 4px;border-radius:34px;border:9px solid #0b0806;background:#000;box-shadow:0 14px 44px rgba(0,0,0,.55);overflow:hidden;}
 #previewCard .pv-phone iframe{display:block;width:100%;height:720px;border:0;background:#0d0906;}
 #previewCard .pv-empty{margin-top:12px;padding:18px;border:1px dashed rgba(255,255,255,.25);border-radius:12px;text-align:center;font-size:14px;opacity:.85;}
+
+/* order-guard v1 */
+#orderProblem{position:fixed;left:12px;right:12px;top:calc(env(safe-area-inset-top,0px) + 10px);z-index:100000;max-width:520px;margin:0 auto;padding:14px 16px;border-radius:14px;background:#7a1f1a;color:#fff;box-shadow:0 10px 34px rgba(0,0,0,.5);font:600 14px/1.4 var(--font-body,system-ui,sans-serif);}
+#orderProblem[data-kind="offline"]{background:#5b3b12;}
+#orderProblem .op-title{font-weight:800;font-size:16px;margin-bottom:4px;}
+#orderProblem .op-text{opacity:.95;}
+#orderProblem .op-row{display:flex;gap:10px;margin-top:12px;}
+#orderProblem button{border:0;border-radius:10px;padding:10px 16px;font:700 14px var(--font-body,system-ui,sans-serif);cursor:pointer;}
+#orderProblem .op-retry{background:#ffd27a;color:#2b1a05;flex:1;}
+#orderProblem .op-retry:disabled{opacity:.7;}
+#orderProblem .op-close{background:rgba(255,255,255,.16);color:#fff;}

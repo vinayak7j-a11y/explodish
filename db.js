@@ -127,6 +127,14 @@ module.exports = {
   setTelegramChat: (rid, chatId) => db.prepare('INSERT INTO telegram_links (restaurant_id, chat_id, linked_at) VALUES (?, ?, ?) ON CONFLICT(restaurant_id) DO UPDATE SET chat_id = excluded.chat_id, linked_at = excluded.linked_at').run(rid, String(chatId), new Date().toISOString()),
   clearTelegramChat: rid => db.prepare('DELETE FROM telegram_links WHERE restaurant_id = ?').run(rid),
   listTelegramRestaurants: () => db.prepare('SELECT restaurant_id FROM telegram_links').all().map(r => r.restaurant_id),
+  /* Retry safety: the order we already stored for this attempt id (last 24 hours), or null. */
+  findOrderByClientId: (rid, cid) => {
+    const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const rows = db.prepare('SELECT data FROM orders WHERE restaurant_id = ? AND time >= ? AND data LIKE ?')
+      .all(rid, since, '%"clientId":"' + cid + '"%');
+    for (const r of rows) { const o = JSON.parse(r.data); if (o.clientId === cid) return o; }
+    return null;
+  },
   getPrepMinutes: rid => { const r = db.prepare('SELECT prep_minutes FROM restaurants WHERE id = ?').get(rid); return r && r.prep_minutes ? r.prep_minutes : null; },
   setPrepMinutes: (rid, n) => db.prepare('UPDATE restaurants SET prep_minutes = ? WHERE id = ?').run(n, rid),
   /* Friendly order number: 1, 2, 3 ... restarting each day (in the report time zone). */

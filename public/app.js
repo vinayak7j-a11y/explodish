@@ -15,17 +15,27 @@ async function apiGetPublicDishes(slug){
   return r.json();
 }
 async function apiCreatePublicOrder(slug, order){
-  const r = await fetch(`/api/r/${slug}/orders`, {
-    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(order)
-  });
+  /* step 1.5: a timeout and clear error kinds, so the customer can always retry safely */
+  const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const timer = ctl ? setTimeout(()=>ctl.abort(), 20000) : null;
+  let r;
+  try{
+    r = await fetch(`/api/r/${slug}/orders`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(order), signal: ctl ? ctl.signal : undefined
+    });
+  }catch(e){
+    const err = new Error('Could not reach the server'); err.network = true; throw err;
+  }finally{ if(timer) clearTimeout(timer); }
   if(!r.ok){
     const body = await r.json().catch(()=>({}));
     const err = new Error(body.error || 'Failed to place order');
     err.soldOut = body.soldOut;
     err.code = body.code;
+    err.status = r.status;
     throw err;
   }
-  return r.json();
+  try{ return await r.json(); }
+  catch(e){ const err = new Error('The reply was cut off'); err.network = true; throw err; }
 }
 
 async function apiSetOrderStatus(id, status){
@@ -1091,14 +1101,19 @@ async function placeOrderNow(){
     upsell: CART.reduce((s,i)=> s + i.deltas.reduce((a,d)=>a+Math.max(d.amount,0),0), 0),
     table: CURRENT_TABLE || null
   };
+  order.clientId = orderAttemptId(order); // same cart = same id, so a retry can never make a second order
+  if(typeof navigator !== 'undefined' && navigator.onLine === false){ showOrderProblem('offline'); return; }
   try{
     const saved = await apiCreatePublicOrder(PUBLIC_SLUG, order);
+    clearOrderAttempt(); clearOrderProblem();
     ORDERS.push(saved);
     if(saved && saved.id) trackMyOrder(saved.id);
   }catch(e){
-    if(e.soldOut){ toast('Sorry, just sold out: ' + e.soldOut.join(', ') + '. Please remove it from your order.'); }
-    else if(e.code==='menu_changed'){ CART = []; renderCartFab(); toast(e.message); refreshMenu(); }
-    else { toast('Could not reach the server — order not sent'); }
+    if(e.soldOut){ clearOrderProblem(); toast('Sorry, just sold out: ' + e.soldOut.join(', ') + '. Please remove it from your order.'); }
+    else if(e.code==='menu_changed'){ clearOrderAttempt(); clearOrderProblem(); CART = []; renderCartFab(); toast(e.message); refreshMenu(); }
+    else if(e.status === 429){ showOrderProblem('busy'); }
+    else if(e.status >= 400 && e.status < 500){ showOrderProblem('rejected', e.message); }
+    else { showOrderProblem('network'); }
     console.error(e);
     return;
   }
