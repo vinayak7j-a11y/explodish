@@ -112,7 +112,7 @@ function ownerRestaurant(r) {
 }
 // What the public (customers scanning a QR code) sees. No email, no dates.
 function customerRestaurant(r) {
-  return { id: r.id, slug: r.slug, name: r.name, active: r.active };
+  return { id: r.id, slug: r.slug, name: r.name, active: r.active, orderingPaused: !!r.orderingPaused };
 }
 
 /* Cleans untrusted JSON: only plain values, limited depth/size, no odd keys. */
@@ -381,6 +381,11 @@ app.post('/api/r/:slug/orders', rateLimit(200, 10 * 60 * 1000), (req, res) => {
     delete order.clientId;
   }
 
+  // Kitchen paused ordering (checked after the retry check, so an order sent just before the pause still succeeds)
+  if (restaurant.orderingPaused) {
+    return res.status(409).json({ error: 'The kitchen is not taking new orders right now. Please ask a waiter.', code: 'ordering_paused' });
+  }
+
   // Re-price every item from the saved menu. The phone's price is never trusted.
   const menu = new Map(store.listDishes(restaurant.id).map(d => [d.id, d]));
   for (const it of order.items) {
@@ -441,6 +446,17 @@ app.put('/api/settings', requireAuth, (req, res) => {
   }
   store.setPrepMinutes(req.restaurantId, n);
   res.json({ prepMinutes: n });
+});
+
+/* Kitchen switch: pause ordering during a rush. Customers keep browsing; new orders are refused. */
+app.get('/api/ordering', requireAuth, (req, res) => {
+  res.json({ paused: store.getOrderingPaused(req.restaurantId) });
+});
+app.put('/api/ordering', requireAuth, (req, res) => {
+  const p = req.body && req.body.paused;
+  if (typeof p !== 'boolean') return res.status(400).json({ error: 'paused must be true or false' });
+  store.setOrderingPaused(req.restaurantId, p);
+  res.json({ paused: p });
 });
 
 /* A customer can check how their own order is going (no login; needs the order's random id). */

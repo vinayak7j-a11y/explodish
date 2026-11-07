@@ -174,6 +174,7 @@ let tableQrCount = 12;
 let showTableQrGrid = false;
 let CURRENT_RESTAURANT = null; // set once logged in on the admin route
 let PUBLIC_SLUG = null; // set on the customer route
+let ORDERING_PAUSED = false; // the kitchen paused ordering (customer side)
 const PREVIEW = new URLSearchParams(window.location.search).has('preview'); // owner's phone-frame preview: ordering is off
 
 /* Table QR entry point: a table's QR code just links to this same page with
@@ -238,6 +239,7 @@ async function bootCustomer(){
     return;
   }
   setMasthead(restaurant.name, 'Open a dish. See inside it. Build it your way.');
+  ORDERING_PAUSED = !!restaurant.orderingPaused; showPausedBanner();
   showTableChip();
   if(PREVIEW && typeof showPreviewBanner === 'function') showPreviewBanner();
   try{
@@ -1101,6 +1103,7 @@ async function placeOrderNow(){
     upsell: CART.reduce((s,i)=> s + i.deltas.reduce((a,d)=>a+Math.max(d.amount,0),0), 0),
     table: CURRENT_TABLE || null
   };
+  if(ORDERING_PAUSED){ await refreshPaused(); if(ORDERING_PAUSED){ showOrderProblem('paused'); return; } }
   order.clientId = orderAttemptId(order); // same cart = same id, so a retry can never make a second order
   if(typeof navigator !== 'undefined' && navigator.onLine === false){ showOrderProblem('offline'); return; }
   try{
@@ -1111,6 +1114,7 @@ async function placeOrderNow(){
   }catch(e){
     if(e.soldOut){ clearOrderProblem(); toast('Sorry, just sold out: ' + e.soldOut.join(', ') + '. Please remove it from your order.'); }
     else if(e.code==='menu_changed'){ clearOrderAttempt(); clearOrderProblem(); CART = []; renderCartFab(); toast(e.message); refreshMenu(); }
+    else if(e.code==='ordering_paused'){ ORDERING_PAUSED = true; showPausedBanner(); showOrderProblem('paused'); }
     else if(e.status === 429){ showOrderProblem('busy'); }
     else if(e.status >= 400 && e.status < 500){ showOrderProblem('rejected', e.message); }
     else { showOrderProblem('network'); }
@@ -1626,6 +1630,7 @@ function kitchenViewBase(){
       ${recentTickets || '<div class="empty">No orders yet.</div>'}
     </div>
 
+    ${typeof rushCardHtml === 'function' ? rushCardHtml() : ''}
     ${timingCardHtml()}
     ${typeof pushCardHtml === 'function' ? pushCardHtml() : ''}
     ${telegramCardHtml()}
@@ -1813,6 +1818,7 @@ function attachKitchenHandlers(){
   if(PREP_MIN === undefined) loadPrep();
   wireTiming();
   if(typeof wirePush === 'function'){ if(PUSH.state === null) loadPush(); wirePush(); }
+  if(typeof wireRush === 'function'){ if(PAUSED === undefined) loadRush(); wireRush(); }
   wireTelegram();
   wireCancelButtons();
   wireHistory();
@@ -1958,6 +1964,7 @@ function trackMyOrder(id){
 async function refreshMenu(){
   if(!cartSlug() || document.hidden) return;
   try{
+    await refreshPaused();
     const fresh = await apiGetPublicDishes(PUBLIC_SLUG);
     if(!fresh.length) return; // a failed request looks empty; keep what we have
     const sig = a => JSON.stringify(a.map(d=>[d.id, d.name, d.basePrice, !!d.soldOut, d.image ? 1 : 0]));

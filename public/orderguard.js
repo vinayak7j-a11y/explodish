@@ -32,6 +32,7 @@
     offline: ["You're offline", 'Your order is saved on this phone. Connect to wifi or mobile data, then tap Retry.'],
     network: ['Order not sent yet', "We couldn't reach the restaurant. Your order is still here. Tap Retry. It will never be sent twice."],
     busy: ['Too many orders from this connection', 'Please wait a minute and tap Retry, or ask a waiter.'],
+    paused: ['Ordering is paused', 'The kitchen is very busy right now. Please ask a waiter, or tap Retry in a few minutes. Your order is saved.'],
     rejected: ['Order not sent', '']
   };
 
@@ -61,6 +62,26 @@
     bar.append(h, p, row);
   };
   root.clearOrderProblem = function () { var b = document.getElementById('orderProblem'); if (b) b.remove(); };
+
+  /* step 1.6: the kitchen can pause ordering when it is overwhelmed */
+  root.showPausedBanner = function () {
+    var on = typeof ORDERING_PAUSED !== 'undefined' && ORDERING_PAUSED;
+    var b = document.getElementById('pausedBanner');
+    if (!on) { if (b) b.remove(); return; }
+    if (b) return;
+    b = document.createElement('div');
+    b.id = 'pausedBanner';
+    b.setAttribute('role', 'status');
+    b.textContent = 'Ordering is paused for a few minutes because the kitchen is very busy. You can still look around.';
+    var m = document.getElementById('masthead');
+    if (m && m.insertAdjacentElement) m.insertAdjacentElement('afterend', b); else document.body.prepend(b);
+  };
+  root.refreshPaused = async function () {
+    try {
+      var r = await apiGetRestaurant(PUBLIC_SLUG);
+      if (r && !!r.orderingPaused !== ORDERING_PAUSED) { ORDERING_PAUSED = !!r.orderingPaused; root.showPausedBanner(); }
+    } catch (e) { /* keep what we know */ }
+  };
 
   root.addEventListener('online', function () {
     var b = document.getElementById('orderProblem');

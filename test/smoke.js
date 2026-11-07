@@ -196,6 +196,26 @@ async function run(slugHolder) {
   const ps1 = await call('GET', '/api/push/status', undefined, true);
   check('notifications are available and give a public key', ps1.status === 200 && ps1.json.enabled === true && ps1.json.publicKey.length > 60, JSON.stringify(ps1.json));
 
+  console.log('\nRush controls (step 1.6)');
+  const cidP = 'pause-test-aaaa1111';
+  const rcPre = await call('POST', `/api/r/${slug}/orders`, Object.assign({}, orderFor(dish, 169), { clientId: cidP }));
+  check('before the pause, orders work (201)', rcPre.status === 201, `status ${rcPre.status}`);
+  check('pause needs login (401)', (await call('PUT', '/api/ordering', { paused: true }, false)).status === 401);
+  check('pause must be true or false (400)', (await call('PUT', '/api/ordering', { paused: 'yes' }, true)).status === 400);
+  const rcOn = await call('PUT', '/api/ordering', { paused: true }, true);
+  check('the owner can pause ordering', rcOn.status === 200 && rcOn.json.paused === true);
+  const rcPub = await call('GET', `/api/r/${slug}`, undefined, false);
+  check('customers can see that ordering is paused', rcPub.json.orderingPaused === true, JSON.stringify(rcPub.json));
+  const rcBlocked = await call('POST', `/api/r/${slug}/orders`, orderFor(dish, 169));
+  check('a new order is refused while paused (409, ordering_paused)', rcBlocked.status === 409 && rcBlocked.json.code === 'ordering_paused', `status ${rcBlocked.status}`);
+  const rcAgain = await call('POST', `/api/r/${slug}/orders`, Object.assign({}, orderFor(dish, 169), { clientId: cidP }));
+  check('a retry of an order sent just before the pause still succeeds (200)', rcAgain.status === 200 && rcAgain.json.id === rcPre.json.id, `status ${rcAgain.status}`);
+  const rcOff = await call('PUT', '/api/ordering', { paused: false }, true);
+  check('the owner can resume ordering', rcOff.status === 200 && rcOff.json.paused === false);
+  const rcResumed = await call('POST', `/api/r/${slug}/orders`, orderFor(dish, 169));
+  check('orders work again after resuming (201)', rcResumed.status === 201, `status ${rcResumed.status}`);
+  check('pause state is readable by the owner', (await call('GET', '/api/ordering', undefined, true)).json.paused === false);
+
   console.log('\nStatus flow');
   const prep = await call('PATCH', `/api/orders/${good.json.id}/status`, { status: 'preparing' }, true);
   check('owner can mark preparing', prep.status === 200 && prep.json.status === 'preparing');

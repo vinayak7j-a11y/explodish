@@ -51,9 +51,14 @@ if (!db.prepare('PRAGMA table_info(restaurants)').all().some(c => c.name === 'pr
   db.exec('ALTER TABLE restaurants ADD COLUMN prep_minutes INTEGER');
 }
 
+/* step 1.6: pause switch (idempotent migration) */
+if (!db.prepare('PRAGMA table_info(restaurants)').all().some(c => c.name === 'ordering_paused')) {
+  db.exec('ALTER TABLE restaurants ADD COLUMN ordering_paused INTEGER NOT NULL DEFAULT 0');
+}
+
 const toRestaurant = r => r && ({
   id: r.id, slug: r.slug, name: r.name, email: r.email,
-  passwordHash: r.password_hash, active: !!r.active, createdAt: r.created_at
+  passwordHash: r.password_hash, active: !!r.active, orderingPaused: !!r.ordering_paused, createdAt: r.created_at
 });
 
 const q = {
@@ -147,6 +152,8 @@ module.exports = {
     for (const r of rows) { const o = JSON.parse(r.data); if (o.clientId === cid) return o; }
     return null;
   },
+  getOrderingPaused: rid => { const r = db.prepare('SELECT ordering_paused FROM restaurants WHERE id = ?').get(rid); return !!(r && r.ordering_paused); },
+  setOrderingPaused: (rid, on) => db.prepare('UPDATE restaurants SET ordering_paused = ? WHERE id = ?').run(on ? 1 : 0, rid),
   getPrepMinutes: rid => { const r = db.prepare('SELECT prep_minutes FROM restaurants WHERE id = ?').get(rid); return r && r.prep_minutes ? r.prep_minutes : null; },
   setPrepMinutes: (rid, n) => db.prepare('UPDATE restaurants SET prep_minutes = ? WHERE id = ?').run(n, rid),
   /* Friendly order number: 1, 2, 3 ... restarting each day (in the report time zone). */
