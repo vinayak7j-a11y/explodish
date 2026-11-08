@@ -768,7 +768,7 @@ function renderDetailOverlay(){
     <div class="detail">
       ${dish.image && currentDetail.showPhoto
         ? `<div class="detail-photo-wrap"><img class="detail-hero" src="${dish.image}" decoding="async" alt=""><button type="button" class="photo-toggle" id="photoToggle">Show layers</button></div>`
-        : `<div class="detail-stack-stage"><div class="stack-stage-inner">${renderExplodedStack(dish, currentDetail.config, {compact:false, interactive:true})}</div><div class="drag-hint">Tap +/− or drag ingredients to adjust</div>${dish.image ? '<button type="button" class="photo-toggle" id="photoToggle">See photo</button>' : ''}</div>`}
+        : `<div class="detail-stack-stage"><div class="stack-stage-inner">${renderExplodedStack(dish, currentDetail.config, {compact:false, interactive:true})}</div>${dish.mode === 'A' ? '<div class="drag-hint">Tap +/− or drag ingredients to adjust</div>' : ''}${dish.image ? '<button type="button" class="photo-toggle" id="photoToggle">See photo</button>' : ''}</div>`}
       <div class="detail-body">
         <button class="detail-close" id="closeDetail" aria-label="Close">✕</button>
         <div class="detail-title-row"><h2>${dietaryDotHtml(dish)}${escapeHtml(dish.name)}</h2></div>
@@ -1584,13 +1584,13 @@ async function saveDraft(){
 function kitchenView(){ return kitchenViewBase() + historyCard(); }
 function kitchenViewBase(){
   const todayStr = new Date().toDateString();
-  const todayOrders = ORDERS.filter(o=> o.status!=='cancelled' && new Date(o.time).toDateString()===todayStr);
+  const todayOrders = ORDERS.filter(o=> !o.test && o.status!=='cancelled' && new Date(o.time).toDateString()===todayStr);
   const totalOrders = todayOrders.length;
   const totalRevenue = todayOrders.reduce((s,o)=>s+o.total,0);
   const totalUpsell = todayOrders.reduce((s,o)=>s+o.upsell,0);
 
   const ingCount = {};
-  ORDERS.filter(o=>o.status!=='cancelled').forEach(o=> o.items.forEach(it=> it.deltas.forEach(d=>{
+  ORDERS.filter(o=>!o.test && o.status!=='cancelled').forEach(o=> o.items.forEach(it=> it.deltas.forEach(d=>{
     if(d.amount>0){
       const key = d.label.replace(/^\+ /,'');
       ingCount[key] = (ingCount[key]||0)+1;
@@ -1606,7 +1606,7 @@ function kitchenViewBase(){
       const mins = Math.max(0, Math.round((Date.now() - new Date(o.time).getTime())/60000));
       return `
     <div class="ticket ticket-card">
-      <div class="ticket-head"><span class="th-table">${o.table ? `TABLE ${escapeHtml(String(o.table))}` : 'NO TABLE'}</span><span>Order ${o.number ? '#' + o.number : o.id} \u00b7 ${new Date(o.time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})} \u00b7 ${mins} min ago</span></div>
+      <div class="ticket-head"><span class="th-table">${o.table ? `TABLE ${escapeHtml(String(o.table))}` : 'NO TABLE'}</span><span>${o.test ? 'TEST ORDER' : 'Order ' + (o.number ? '#' + o.number : o.id)} \u00b7 ${new Date(o.time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})} \u00b7 ${mins} min ago</span><button type="button" class="print-ticket" data-id="${escapeHtml(o.id)}" title="Print this ticket">Print</button></div>
       ${o.items.map(it=>`
         <div class="ticket-line"><strong>${escapeHtml(it.dishName)}</strong></div>
         ${it.mods.map(m=>`<div class="ticket-line tl-mod ${modClass(m)}">${escapeHtml(m)}</div>`).join('')}
@@ -1819,6 +1819,7 @@ function attachKitchenHandlers(){
   wireTiming();
   if(typeof wirePush === 'function'){ if(PUSH.state === null) loadPush(); wirePush(); }
   if(typeof wireRush === 'function'){ if(PAUSED === undefined) loadRush(); wireRush(); }
+  if(typeof wirePrint === 'function') wirePrint();
   wireTelegram();
   wireCancelButtons();
   wireHistory();
@@ -2018,7 +2019,7 @@ function rangeStart(r){
 }
 function historyCard(){
   const start = rangeStart(historyRange);
-  const inRange = ORDERS.filter(o=> !start || new Date(o.time) >= start);
+  const inRange = ORDERS.filter(o=> !o.test && (!start || new Date(o.time) >= start));
   const valid = inRange.filter(o=>o.status!=='cancelled');
   const revenue = valid.reduce((s,o)=>s+o.total,0);
   const addons = valid.reduce((s,o)=>s+o.upsell,0);

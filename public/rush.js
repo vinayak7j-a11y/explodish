@@ -29,6 +29,9 @@ function rushCardHtml() {
       '<button type="button" class="btn' + (paused ? '' : ' secondary') + '" id="rushPause">' + (paused ? 'Resume ordering' : 'Pause ordering') + '</button>' +
     '</div>' +
     (dishes ? '<div class="sc-desc" style="margin-top:14px;">Ran out of something? Tap the dish. Tap again when it is back.</div><div class="rush-dishes">' + dishes + '</div>' : '') +
+    '<div class="rush-pause" style="margin-top:14px;"><div><b>Test your setup</b><div class="sc-desc" style="margin:2px 0 0;">Sends a practice order marked TEST. It is never counted in your numbers. You should hear the repeating sound, see the ticket, and get your Telegram and lock-screen alerts.</div></div>' +
+    '<button type="button" class="btn secondary" id="rushTest">Send a test order</button></div>' +
+    '<div class="sc-desc" id="awakeNote" style="margin-top:12px;">' + awakeText() + '</div>' +
     '</div>';
 }
 
@@ -43,7 +46,38 @@ async function setOrderingPaused(paused) {
   updatePauseBar(); renderAdmin();
 }
 
+var wakeLock = null, AWAKE = 'off';
+function awakeText() {
+  if (AWAKE === 'on') return 'Screen stays awake while this page is open \u2713';
+  if (AWAKE === 'unsupported') return 'This browser cannot keep the screen awake. Turn off auto-lock in your phone or tablet settings, and keep it plugged in.';
+  return 'The screen may turn off and stop the alert sound. <button type="button" class="imp-linkbtn" id="keepAwakeBtn">Keep screen on</button>';
+}
+function updateAwakeNote() { var n = document.getElementById('awakeNote'); if (n) { n.innerHTML = awakeText(); var b = document.getElementById('keepAwakeBtn'); if (b) b.addEventListener('click', keepAwake); } }
+async function keepAwake() {
+  if (!('wakeLock' in navigator)) { AWAKE = 'unsupported'; updateAwakeNote(); return; }
+  try {
+    if (wakeLock && !wakeLock.released) { AWAKE = 'on'; updateAwakeNote(); return; }
+    wakeLock = await navigator.wakeLock.request('screen');
+    AWAKE = 'on';
+    wakeLock.addEventListener('release', function () { AWAKE = 'off'; updateAwakeNote(); });
+  } catch (e) { AWAKE = 'off'; }
+  updateAwakeNote();
+}
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'visible' && /^\/admin/.test(location.pathname) && PAUSED !== undefined) keepAwake();
+});
+
+async function sendTestOrder() {
+  try {
+    var r = await fetch('/api/orders/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!r.ok) throw new Error('x');
+    toast('Test order sent. Listen for the sound, then press Start preparing.');
+  } catch (e) { toast('Could not send the test order. Check your connection.'); }
+}
+
 function wireRush() {
+  var t = document.getElementById('rushTest'); if (t) t.addEventListener('click', sendTestOrder);
+  keepAwake();
   var p = document.getElementById('rushPause');
   if (p) p.addEventListener('click', function () { p.disabled = true; setOrderingPaused(!PAUSED); });
   document.querySelectorAll('.rush-dish').forEach(function (b) {

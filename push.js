@@ -35,6 +35,7 @@ const tableLabel = o => (o.table ? `Table ${o.table}` : 'No table');
 const numLabel = o => (o.number ? `#${o.number}` : '');
 
 function newOrderPayload(order) {
+  if (order.test) return { title: 'TEST order \u00b7 your alerts are working', body: 'This was a practice order. Open Explodish and press Start preparing.', tag: 'order-' + order.id, url: '/admin', orderId: order.id };
   const names = (order.items || []).slice(0, 3).map(i => i.dishName).filter(Boolean);
   const more = (order.items || []).length > 3 ? ` +${order.items.length - 3} more` : '';
   return {

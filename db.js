@@ -162,7 +162,8 @@ module.exports = {
     const today = day(Date.now());
     const since = new Date(Date.now() - 36 * 3600 * 1000).toISOString();
     const rows = db.prepare('SELECT time, data FROM orders WHERE restaurant_id = ? AND time >= ?').all(rid, since)
-      .filter(r => day(r.time) === today);
+      .filter(r => day(r.time) === today)
+      .filter(r => { try { return !JSON.parse(r.data).test; } catch (e) { return true; } }); // practice orders do not take a number
     let max = 0;
     for (const r of rows) { const n = Number(JSON.parse(r.data).number); if (n > max) max = n; }
     return Math.max(max, rows.length) + 1;

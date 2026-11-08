@@ -733,3 +733,8 @@ body:has(.pro-sound-bar:not([hidden])){padding-bottom:calc(84px + env(safe-area-
 #pauseBar{position:fixed;left:0;right:0;top:0;z-index:99998;display:flex;align-items:center;justify-content:center;gap:14px;padding:8px 12px;background:#b3261e;color:#fff;font:700 14px var(--font-body,system-ui,sans-serif);}
 #pauseBar button{border:0;border-radius:8px;padding:6px 14px;background:#fff;color:#b3261e;font:800 13px var(--font-body,system-ui,sans-serif);cursor:pointer;}
 #pausedBanner{margin:10px 0;padding:12px 14px;border-radius:12px;background:rgba(245,166,35,.16);border:1px solid rgba(245,166,35,.6);color:#ffd27a;font:600 14px/1.4 var(--font-body,system-ui,sans-serif);}
+
+/* print-and-test v1 */
+.ticket-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+.print-ticket{margin-left:auto;border:1px solid currentColor;background:transparent;color:inherit;border-radius:8px;padding:4px 12px;font:700 12px var(--font-body,system-ui,sans-serif);cursor:pointer;opacity:.85;}
+.print-ticket:hover{opacity:1;}

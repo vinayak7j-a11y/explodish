@@ -106,7 +106,7 @@ async function waitFor(fn, ms) { const end = Date.now() + ms; while (Date.now() 
 
   const o1 = await place('4');
   check('a new order is sent to the phone with table, items, changes and total',
-    await waitFor(() => sent.some(s => s.chat_id === '555' && /New order - Table 4/.test(s.text) && /Tele Burger/.test(s.text) && /No Lettuce/.test(s.text) && /Rs 169/.test(s.text)), 3000),
+    await waitFor(() => sent.some(s => s.chat_id === '555' && /New order #\d+ - Table 4/.test(s.text) && /Tele Burger/.test(s.text) && /No Lettuce/.test(s.text) && /Rs 169/.test(s.text)), 3000),
     JSON.stringify(sent.slice(-2)));
 
   check('a reminder arrives if nobody accepts the order',

@@ -216,6 +216,21 @@ async function run(slugHolder) {
   check('orders work again after resuming (201)', rcResumed.status === 201, `status ${rcResumed.status}`);
   check('pause state is readable by the owner', (await call('GET', '/api/ordering', undefined, true)).json.paused === false);
 
+  console.log('\nTest order and printing (steps 1.7 and 1.8)');
+  check('test order needs login (401)', (await call('POST', '/api/orders/test', {}, false)).status === 401);
+  const realA = await call('POST', `/api/r/${slug}/orders`, orderFor(dish, 169));
+  const tst = await call('POST', '/api/orders/test', {}, true);
+  check('the owner can send a test order (201, marked test, table TEST)', tst.status === 201 && tst.json.test === true && tst.json.table === 'TEST' && tst.json.status === 'new', JSON.stringify(tst.json).slice(0, 160));
+  const realB = await call('POST', `/api/r/${slug}/orders`, orderFor(dish, 169));
+  check('a test order does not use up an order number', realB.json.number === realA.json.number + 1, JSON.stringify([realA.json.number, realB.json.number]));
+  const listed = await call('GET', '/api/orders', undefined, true);
+  check('the kitchen still sees the test order on its screen', Array.isArray(listed.json) && listed.json.some(o => o.id === tst.json.id));
+  const csvRes = await fetch(BASE + '/api/orders.csv', { headers: { Cookie: cookie } });
+  const csvText = await csvRes.text();
+  check('the CSV leaves test orders out', csvRes.status === 200 && csvText.indexOf(tst.json.id) === -1 && csvText.indexOf(realB.json.id) !== -1);
+  const pj = await fetch(BASE + '/print.js');
+  check('print script is served', pj.status === 200 && /buildTicketHtml/.test(await pj.text()));
+
   console.log('\nStatus flow');
   const prep = await call('PATCH', `/api/orders/${good.json.id}/status`, { status: 'preparing' }, true);
   check('owner can mark preparing', prep.status === 200 && prep.json.status === 'preparing');

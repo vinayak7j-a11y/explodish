@@ -65,6 +65,8 @@ function fakeSub(n) {
   check('a reminder follows if nobody accepts the order', calls.length >= 2 && /Not accepted yet/.test(calls[calls.length - 1].payload.title), JSON.stringify(calls.map(c => c.payload.title)));
   check('the reminder replaces the first one (same tag)', calls[1] && calls[1].payload.tag === calls[0].payload.tag);
 
+  check('a test order is clearly labelled in the notification', /TEST/.test(push.newOrderPayload({ id: 't1', test: true, table: 'TEST', items: [], total: 0 }).title));
+
   // accepted order: no more reminders
   const order2 = { id: 'ord2', restaurantId: 'r-one', time: new Date().toISOString(), status: 'new', table: '2', number: 8, total: 99, items: [{ dishName: 'Cheese Burger' }] };
   store.insertOrder(order2);

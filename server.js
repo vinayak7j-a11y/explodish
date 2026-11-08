@@ -501,7 +501,7 @@ app.get('/api/orders.csv', requireAuth, (req, res) => {
   const to = req.query.to ? new Date(String(req.query.to)) : null;
   if ((from && isNaN(from)) || (to && isNaN(to))) return res.status(400).send('Invalid date');
   const rows = store.listOrders(req.restaurantId)
-    .filter(o => (!from || new Date(o.time) >= from) && (!to || new Date(o.time) <= to));
+    .filter(o => !o.test && (!from || new Date(o.time) >= from) && (!to || new Date(o.time) <= to));
   const lines = [['Order ID', 'Date', 'Time', 'Table', 'Status', 'Items', 'Total (INR)', 'Add-on revenue (INR)'].map(csvCell).join(',')];
   rows.forEach(o => {
     const d = new Date(o.time);
@@ -516,6 +516,23 @@ app.get('/api/orders.csv', requireAuth, (req, res) => {
   res.set('Content-Type', 'text/csv; charset=utf-8');
   res.set('Content-Disposition', 'attachment; filename="explodish-orders.csv"');
   res.send('\ufeff' + lines.join('\r\n') + '\r\n');
+});
+
+/* Step 1.8: "Send a test order". A practice run through the real alert path (sound, tickets, Telegram, lock screen).
+   Marked test: it never counts in stats, history or the CSV, and does not use an order number. */
+app.post('/api/orders/test', requireAuth, rateLimit(30, 10 * 60 * 1000), (req, res) => {
+  const restaurant = store.findById(req.restaurantId);
+  if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
+  const order = {
+    id: uid(), restaurantId: restaurant.id, time: new Date().toISOString(), status: 'new',
+    table: 'TEST', test: true, number: null, total: 0, upsell: 0,
+    items: [{ dishName: 'Sample Burger (practice)', price: 0, mods: ['No onion', '+ Extra cheese', 'Less spicy'], deltas: [], dishId: 'test', config: null, modifierChoices: [] }]
+  };
+  store.insertOrder(order);
+  notifyOrders(restaurant.id, 'new');
+  telegram.notifyNewOrder(order, restaurant);
+  push.notifyNewOrder(order, restaurant);
+  res.status(201).json(order);
 });
 
 telegram.mount(app, { requireAuth, rateLimit });

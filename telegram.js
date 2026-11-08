@@ -72,7 +72,7 @@ function notifyNewOrder(order, restaurant) {
   try {
     const chat = store.getTelegramChat(restaurant.id);
     if (!chat) return;
-    send(chat, `New order - ${tableLabel(order)}\n${orderLines(order)}\nTotal Rs ${order.total}\nOpen ${adminUrl()}`);
+    send(chat, `${order.test ? 'TEST ORDER (practice, not real)' : 'New order' + (order.number ? ' #' + order.number : '')} - ${tableLabel(order)}\n${orderLines(order)}\nTotal Rs ${order.total}\nOpen ${adminUrl()}`);
     scheduleReminder(order.id, restaurant.id, 1);
   } catch (e) { console.warn('[telegram] notify failed:', e.message); }
 }
