@@ -33,6 +33,7 @@ app.use((req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('X-Frame-Options', 'SAMEORIGIN'); // only this site may frame itself (the owner's menu preview); other sites still cannot
   res.set('Referrer-Policy', 'same-origin');
+  if (req.secure) res.set('Strict-Transport-Security', 'max-age=15552000; includeSubDomains'); // only over https
   next();
 });
 app.use(cookieParser());
@@ -448,6 +449,15 @@ app.put('/api/settings', requireAuth, (req, res) => {
   res.json({ prepMinutes: n });
 });
 
+/* Hosting: a health check for the host's monitor, and the public address for QR codes. */
+app.get('/healthz', (req, res) => {
+  try { store.restaurantCount(); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ ok: false }); }
+});
+app.get('/api/config', requireAuth, (req, res) => {
+  res.json({ publicUrl: (process.env.PUBLIC_URL || '').replace(/\/+$/, '') });
+});
+
 /* Kitchen switch: pause ordering during a rush. Customers keep browsing; new orders are refused. */
 app.get('/api/ordering', requireAuth, (req, res) => {
   res.json({ paused: store.getOrderingPaused(req.restaurantId) });
@@ -614,8 +624,23 @@ if (store.restaurantCount() === 0 && process.env.NODE_ENV !== 'production') {
   console.log('Created demo account: owner@demo.test / demo12345');
 }
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Explodish menu app running at http://localhost:${PORT}`);
+  if (process.env.NODE_ENV === 'production' && !process.env.PUBLIC_URL) console.warn('WARNING: PUBLIC_URL is not set. QR codes will use whatever address the owner opens admin from.');
   telegram.start();
   push.start();
+  require('./backup').startSchedule();
 });
+
+/* Stop cleanly when the host restarts or updates the app: close live connections, then the database. */
+let stopping = false;
+function shutdown(signal) {
+  if (stopping) return; stopping = true;
+  console.log(signal + ': shutting down');
+  for (const set of orderStreams.values()) for (const r of set) { try { r.end(); } catch (e) {} }
+  server.close(() => { try { store.close(); } catch (e) {} process.exit(0); });
+  setTimeout(() => process.exit(0), 8000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('unhandledRejection', e => console.error('Unhandled rejection:', e));

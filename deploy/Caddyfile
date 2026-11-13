@@ -1,0 +1,7 @@
+# Replace menu.yourdomain.com with your real address. Caddy gets and renews the HTTPS certificate by itself.
+menu.yourdomain.com {
+	encode gzip
+	reverse_proxy localhost:3000 {
+		flush_interval -1
+	}
+}

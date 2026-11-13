@@ -1249,14 +1249,29 @@ function ownerView(){
       </div>
       ${showTableQrGrid ? `
         <div class="qr-toolbar"><button class="btn secondary small" id="printQrBtn">Print all</button></div>
-        <div class="qr-grid" id="qrGrid">${renderQrGrid()}</div>
+        <div id="qrNote">${qrNoteHtml()}</div><div class="qr-grid" id="qrGrid">${renderQrGrid()}</div>
       ` : ''}
     </div>
   `;
 }
 
+let PUBLIC_BASE = null; // the public address from the server (PUBLIC_URL), once known
+function qrBase(){ return (PUBLIC_BASE || window.location.origin).replace(/\/+$/, ''); }
+function qrNoteHtml(){
+  const base = qrBase();
+  const local = /^https?:\/\/(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(base);
+  return local
+    ? `<div class="sc-desc" style="color:var(--brass);font-weight:600;">These codes open <b>${escapeHtml(base)}</b>, which only works on this network. Open this page from your public address (or set PUBLIC_URL) before you print them.</div>`
+    : `<div class="sc-desc">These codes open <b>${escapeHtml(base)}</b></div>`;
+}
+async function loadPublicBase(){
+  PUBLIC_BASE = '';
+  try{ const r = await fetch('/api/config'); if(r.ok){ const j = await r.json(); PUBLIC_BASE = j.publicUrl || ''; } }catch(e){}
+  const g = document.getElementById('qrGrid'); if(g) g.innerHTML = renderQrGrid();
+  const n = document.getElementById('qrNote'); if(n) n.innerHTML = qrNoteHtml();
+}
 function renderQrGrid(){
-  const origin = window.location.origin;
+  const origin = qrBase();
   const slug = CURRENT_RESTAURANT.slug;
   let out = '';
   for(let n=1; n<=tableQrCount; n++){
@@ -1344,6 +1359,7 @@ function renderIngredientRowsB(){
 
 function attachOwnerHandlers(){
   wireImport();
+  if(PUBLIC_BASE === null) loadPublicBase();
   if(typeof wirePreview === 'function') wirePreview();
   document.getElementById('photoInput').addEventListener('change', (e)=>{
     const file = e.target.files[0];

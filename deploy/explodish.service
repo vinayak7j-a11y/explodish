@@ -1,0 +1,15 @@
+[Unit]
+Description=Explodish menu app
+After=network.target
+
+[Service]
+User=explodish
+WorkingDirectory=/opt/explodish
+EnvironmentFile=/opt/explodish/.env
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

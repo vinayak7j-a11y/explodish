@@ -231,6 +231,13 @@ async function run(slugHolder) {
   const pj = await fetch(BASE + '/print.js');
   check('print script is served', pj.status === 200 && /buildTicketHtml/.test(await pj.text()));
 
+  console.log('\nHosting basics');
+  const hz = await fetch(BASE + '/healthz');
+  check('health check answers ok', hz.status === 200 && (await hz.json()).ok === true);
+  check('public address needs login (401)', (await call('GET', '/api/config', undefined, false)).status === 401);
+  const cfg = await call('GET', '/api/config', undefined, true);
+  check('the public address is given to the owner', cfg.status === 200 && typeof cfg.json.publicUrl === 'string', JSON.stringify(cfg.json));
+
   console.log('\nStatus flow');
   const prep = await call('PATCH', `/api/orders/${good.json.id}/status`, { status: 'preparing' }, true);
   check('owner can mark preparing', prep.status === 200 && prep.json.status === 'preparing');

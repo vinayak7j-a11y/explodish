@@ -7,7 +7,8 @@ const path = require('path');
 
 const DATA_DIR = path.join(__dirname, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
-const db = new Database(process.env.DB_FILE || path.join(DATA_DIR, 'explodish.db'));
+const DB_PATH = process.env.DB_FILE || path.join(DATA_DIR, 'explodish.db');
+const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
@@ -121,6 +122,9 @@ importLegacyJson();
 
 module.exports = {
   restaurantCount: () => q.countRest.get().c,
+  dbPath: DB_PATH,
+  backupTo: dest => db.backup(dest),
+  close: () => db.close(),
   findById: id => toRestaurant(q.restById.get(String(id))),
   findByEmail: email => toRestaurant(q.restByEmail.get(email)),
   findBySlug: slug => toRestaurant(q.restBySlug.get(String(slug))),
