@@ -11,6 +11,14 @@ function check(name, ok, detail) {
   else { failed++; console.log('  FAIL  ' + name + (detail ? '  -> ' + detail : '')); }
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// The live database may already hold older data (for example the one-time import of old data/*.json files),
+// so the checks compare the backup with what the live database really holds instead of assuming it is empty.
+function liveCounts() {
+  const Database = require('better-sqlite3');
+  const d = new Database(process.env.DB_FILE, { readonly: true });
+  try { return { restaurants: d.prepare('SELECT COUNT(*) c FROM restaurants').get().c, orders: d.prepare('SELECT COUNT(*) c FROM orders').get().c }; }
+  finally { d.close(); }
+}
 
 (async () => {
   console.log('\nBackup and restore');
@@ -20,8 +28,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   const dir = path.join(tmp, 'backups');
   const r1 = await runBackup(dir, 3);
-  check('a backup is made and passes its integrity check', fs.existsSync(r1.file) && r1.ok === true && r1.restaurants === 1 && r1.orders === 1, JSON.stringify(r1));
-  check('the backup holds the same data', verifyBackup(r1.file).orders === 1);
+  const live1 = liveCounts();
+  check('a backup is made and passes its integrity check', fs.existsSync(r1.file) && r1.ok === true && r1.restaurants === live1.restaurants && r1.orders === live1.orders && r1.orders >= 1, JSON.stringify([r1, live1]));
+  check('the backup holds the same data', verifyBackup(r1.file).orders === live1.orders);
   check('a backup is one single file (no -wal or -shm leftovers)', fs.readdirSync(dir).every(f => /\.db$/.test(f)), fs.readdirSync(dir).join(', '));
 
   for (let i = 0; i < 4; i++) { await sleep(15); await runBackup(dir, 3); }
@@ -30,16 +39,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   // add more data AFTER the backup, then restore the backup and check the later data is gone
   const kept = path.join(dir, listBackups(dir)[0]);
   store.insertOrder({ id: 'o2', restaurantId: 'r-b', time: new Date().toISOString(), status: 'new', total: 50, items: [] });
-  const liveBefore = store.listOrders('r-b').length;
+  const liveBefore = liveCounts().orders; // not counted yet if the file is only in the write-ahead log, so ask SQLite directly after closing below
   store.close();
+  const liveAfterClose = liveCounts().orders;
   const res = spawnSync(process.execPath, [path.join(__dirname, '..', 'restore.js'), kept], { env: { ...process.env, DB_FILE: path.join(tmp, 'live.db') }, encoding: 'utf8' });
-  check('restore runs and reports success', res.status === 0 && /Restored 1 restaurants/.test(res.stdout), res.stdout + res.stderr);
+  check('restore runs and reports success', res.status === 0 && new RegExp('Restored ' + r1.restaurants + ' restaurants and ' + r1.orders + ' orders').test(res.stdout), res.stdout + res.stderr);
   const Database = require('better-sqlite3');
   const d = new Database(path.join(tmp, 'live.db'), { readonly: true });
   const nOrders = d.prepare('SELECT COUNT(*) c FROM orders').get().c;
   const kv = d.prepare("SELECT value FROM kv WHERE key = 'vapid_public'").get();
   d.close();
-  check('after restore the database is back to the backup (' + liveBefore + ' orders became 1)', liveBefore === 2 && nOrders === 1);
+  check('after restore the database is back to the backup (' + liveAfterClose + ' orders became ' + r1.orders + ')', liveAfterClose === r1.orders + 1 && nOrders === r1.orders, JSON.stringify({ liveBefore, liveAfterClose, nOrders, backup: r1.orders }));
   check('notification keys survive the backup', kv && kv.value === 'KEEP-ME');
   check('the old database was kept next to it', fs.readdirSync(tmp).some(f => /\.before-restore-/.test(f)));
 
