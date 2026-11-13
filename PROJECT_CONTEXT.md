@@ -1,6 +1,6 @@
-# Explodish: Project Context & Handoff (v4, 31 Oct 2026)
+# Explodish: Project Context & Handoff (v5, 13 Nov 2026)
 
-> **Read this first in any new chat.** It replaces every older copy (v3 and earlier).
+> **Read this first in any new chat.** It replaces every older copy (v4 and earlier).
 > It holds the vision and north star, every decision made, the exact current state,
 > how the code is organised, what is verified and what is NOT, how changes are
 > delivered, and the prioritised next steps. Where something says **UNVERIFIED**, it
@@ -11,21 +11,18 @@
 
 ## 0. First five minutes of the new chat (do these before anything else)
 
-1. Read this file fully. Read `ROADMAP` in section 9. Do not restart discussions
-   that section 2 already settled.
+1. Read this file fully, then `ROADMAP` in section 9. Do not restart discussions that section 2 already settled.
 2. Ask the owner to run, inside `~/Downloads/menu-app`:
-   `git status -sb` and `git log --oneline -10` and `npm test`.
-   **Why:** the last three patches (swaps/table/limits, live order updates, kitchen
-   step 1.2) were applied by the owner but their commit status is unconfirmed. The
-   last commit confirmed on GitHub is `dcd0330` (favicon). Expected after all patches:
-   `npm test` prints `PASS: 24 passed, 0 failed` and then `PASS: 16 passed, 0 failed`
-   (the second is the Telegram test).
-3. If anything is uncommitted, give the commit commands in section 10.4 first.
-4. Then continue with **step 1.4 (customer progress track)**, section 9. Step 1.3
-   (Telegram) is DELIVERED but never tried against real Telegram: ask whether the owner
-   created the bot (steps in section 3.6) and connected it, and fix whatever they hit.
-5. Never work "blind": you can read their code yourself (see 8.1) and test in a
-   real browser in your sandbox before sending anything.
+   `git status -sb` and `git log --oneline -5` and `npm test`.
+   Expected: clean tree, latest commit `e5e7f3b` (or newer), and five passing groups:
+   `PASS: 77`, `PASS: 16`, `PASS: 38`, `PASS: 23`, `PASS: 9`.
+3. Phase 1 (orders must never be lost) is BUILT. What is still **unconfirmed by the owner on real devices** (ask, one question at a time):
+   (a) Chrome desktop notification test on their Mac (Kitchen tab -> Lock-screen notifications -> Turn on -> Send test notification),
+   (b) a real Telegram bot (token in `.env`, Phone alerts card, locked-phone test), (c) a real print of a ticket,
+   (d) the new drag-and-drop feel and the new dish art on a real phone.
+4. Next work: **first test server** (follow `DEPLOY.md`, fix it where it is wrong), then Phase 2 (restaurant signup/preview funnel).
+   No hosting provider has been chosen yet; suggested: a small Mumbai/Bangalore VPS (about US$4-6 a month) plus a domain. Check prices live.
+5. Never work "blind": clone the repo and test in a real browser in your sandbox before sending anything (see 8.1).
 
 ---
 
@@ -35,7 +32,7 @@
   **Not experienced with the terminal.** Give commands with the folder stated and say
   what the output should look like. **Do not put `# comments` inside command blocks**:
   zsh treats them as arguments and prints errors (this happened).
-- **Delivery format they asked for:** copy-pasteable terminal blocks, either
+- **Delivery format that works best now:** a **downloadable patch file** (`patch-*.py`, content-matching, prints `[OK]/[SKIP]/[FAIL]`) plus short copy-paste Terminal blocks to run and commit it. Long pasted blocks fail for them. Give each patch a NEW file name when re-issuing (a browser kept an old same-name copy once and the fix did not apply). Older format they asked for: copy-pasteable terminal blocks, either
   `cat > file << 'EOF'` for new files or a **content-matching Python patch script**
   (`python3 - << 'EOF' ... EOF`) that prints `[OK]` / `[SKIP]` / `[FAIL]` per change.
   Never send unified diffs or line-number edits. Do not send a zip file each time.
@@ -49,6 +46,15 @@
 - They paste terminal output back. Read it carefully: they sometimes run an
   already-committed block twice ("nothing to commit" is harmless) or paste Python
   that includes `EOF` lines from earlier blocks.
+
+---
+
+- **They run every patch themselves and paste the Terminal output back.** Read it: `[SKIP]` everywhere means already applied (harmless);
+  "nothing to commit" means it was committed earlier. They sometimes run a block twice. A slow `npm install` is almost always
+  `better-sqlite3` rebuilding: tell them to `Ctrl+C` and run `npm install --ignore-scripts`.
+- Their Mac has **old `data/*.json` files** from before SQLite; the app imports them into any EMPTY database once (also test databases).
+  Tests must never assume an empty database (this broke the backup test once).
+- Before sending a patch: apply it to a fresh `git clone` of origin, run it twice (2nd run = all `[SKIP]`), `node --check`, `npm test`, and test in a real browser.
 
 ---
 
@@ -143,103 +149,59 @@ to the owner's phone, offline bar, failure-proof order submission).
 
 ---
 
-## 3. Current state (what exists)
+
+---
+
+## 3. Current state (what exists, as of 13 Nov 2026, commit e5e7f3b)
 
 ### 3.1 Platform / security
-- Multi-tenant: `/admin` login/register, `/r/:slug` customer menu, `/` landing stub.
-- Auth: bcryptjs + JWT in an httpOnly cookie (30 days). `requireAuth` also checks the
-  restaurant exists and `active`.
-- **SQLite** (`better-sqlite3`, `data/explodish.db`, WAL). `DB_FILE` env overrides the path.
-- JWT secret from `.env` (git-ignored). Run with `node --env-file=.env server.js`.
-- Hardening: body limit 100 kb (12 MB for `/api/dishes`), dish/order sanitisers, in-memory
-  rate limits, security headers, JSON-only errors, CSV formula guard.
-- **Server re-prices every order item** from the saved menu; tampered prices -> 409.
-- **Tenant isolation verified** (see 6): another restaurant cannot read or change your
-  orders/dishes/CSV. Hostile text in dish name, category or table link is shown as text
-  and does not run script (checked on customer, owner and kitchen pages).
-- **Table value validation (new):** server and page accept only 1-8 letters, digits or
-  dashes; anything else is stored as "no table" and the order still goes through.
-- **Order rate limits (changed):** orders 200 per 10 min per IP per restaurant path,
-  cancels 60 per 10 min. Behind a tunnel or proxy every customer can look like one IP
-  unless `TRUST_PROXY=1` is set.
+- Multi-tenant: `/admin` login/register, `/r/:slug` customer menu, `/` landing stub. `/r/:slug?preview=1` = the owner's preview (ordering off).
+- Auth: bcryptjs + JWT in an httpOnly cookie (30 days; `secure` in production). `requireAuth` also checks the restaurant exists and is `active`.
+- SQLite (`better-sqlite3`, WAL). `DB_FILE` env overrides the path. Production refuses to start without a real `JWT_SECRET`.
+- Hardening: body limits, sanitisers, in-memory rate limits (set `TRUST_PROXY=1` behind a proxy), security headers (`X-Frame-Options: SAMEORIGIN`
+  so only the app itself can frame itself; HSTS only when the request is https), CSV formula guard, server re-prices every order (tamper -> 409).
+- Tenant isolation verified; hostile text shown as text everywhere checked.
+- Health check `GET /healthz`. Graceful shutdown on SIGTERM/SIGINT (about 1.4 s). `npm audit`: 0 vulnerabilities (Express deps updated).
 
 ### 3.2 Owner side (`/admin` -> Owner tools)
-- Dish form: photo, name, category, Jain-friendly, base price, removal rule, mode A/B,
-  layers/ingredients, modifier groups, publish/save/clear. Templates dropdown, keyword
-  allergen suggestions, dependency chips, sold-out toggle, Edit, Delete.
-- **Mode B swaps (new):** each ingredient row has "Customer can swap this"; ticking it
-  shows an options box: `Paneer, Tofu +40, Mushroom +30` (first = default). Saving with
-  fewer than two options is refused with a message. Editing pre-fills the box.
-- Table QR codes (`/api/qr`, printable grid via "Print all"). **QR links use the address
-  you opened the admin from** (`window.location.origin`): opening admin at `localhost`
-  makes QR codes unreachable from a phone. For phone tests open admin via the Mac's wifi
-  IP (`ipconfig getifaddr en0`) or a tunnel. A `PUBLIC_URL` setting is planned.
-- Live preview of the exploded dish (wide screens only), drag-to-reorder layers
-  (SortableJS, **not verified by hand**).
+- **Add your menu** card: paste text or choose a photo -> review list (edit name/price/category/type, include/exclude) -> Publish -> **Undo this import**.
+  Parser `public/menuparse.js` (free, no AI): `Name - price`, rupee forms, dot leaders, `99/149` sizes (Regular/Large or Half/Full), headings, price on next line,
+  junk/phone/GST lines ignored and listed, non-veg blocked, "Since 1998"/noise dropped, duplicates and already-on-menu flagged.
+  Photo reading `public/menuimport.js`: **Tesseract.js in the browser** (files served from `node_modules` via `/vendor/ocr/*`, English only, about 10 s per photo).
+  Imported dishes use templates and are marked **needsReview** ("Check ingredients"): hidden from Jain/allergen-filtered customers until **Mark checked**.
+  OCR reads the rupee sign as "1": photo prices 100-199 are flagged "Check price" and the photo + "read as" line are shown beside each row.
+- **Your menu, as customers see it**: live phone-frame preview (`public/menupreview.js`), ordering off, Refresh/Hide/Open customer page.
+- The old dish form is hidden behind **Build one dish by hand** (Mode A layers / Mode B ingredients with swaps, modifiers, photo, drag-reorder UNVERIFIED by hand).
+- Table QR codes (`/api/qr`); they use `PUBLIC_URL` when set and say which address they open (warn on localhost/LAN).
 
 ### 3.3 Customer side (`/r/:slug`)
-- Menu grid, category pills, Jain filter, "No <allergen>" chips, table chip.
-- Open dish: steppers, drag layers, modifiers, delta feed, running total, build level.
-  **Dish with a photo:** menu card shows the photo; open dish shows layers with a
-  See photo toggle.
-- **Cart (new):** each item has **Remove** and **+ Another**, a Total row, then Place
-  order. Cart saved across refresh (12 h). Still a small popover over the menu (a full
-  cart sheet is planned in the redesign).
-- After ordering: status banner polled every 8 s with Cancel while status is `new`.
-- Menu refreshes every 45 s and on tab focus.
+- Menu grid, category pills, Jain filter, "No <allergen>" chips, table chip, sold-out labels, menu refresh every 45 s.
+- Open dish: steppers, drag layers, modifiers, delta feed, running total, build level, confetti. **New art `public/layerart.js`**: shaded 3/4-view SVG layers
+  (bun with sesame, grill-marked patty, melting cheese, frilly lettuce, seeded tomato, onion rings, pickles, sauce, paneer), flat bread for wraps,
+  bowls (curry/dal/soup/biryani with garnish and steam) and glasses (drink with ice, straw, lemon) for ingredient-view dishes; bigger stage, build-up animation.
+- Cart popover (Remove, + Another, Total). **Failure-proof ordering (`public/orderguard.js`)**: one attempt id per cart so Retry never double-orders,
+  red "Order not sent yet / You're offline / Ordering is paused" bar with **Retry order**, 20 s timeout, cart kept until the kitchen really has the order.
+- **Order progress track**: "Order #12 - Table 5", Received / Preparing / Ready, "Ready in about N min" (owner-set waiting time, counted from Start preparing),
+  "A waiter will come to your table soon" if still unaccepted after 3 min (`WAITER_AFTER_SEC`), Cancel while `new`.
+- **Pause**: if the kitchen paused ordering, a banner shows and orders are refused (409 `ordering_paused`).
 
 ### 3.4 Kitchen (`/admin` -> Kitchen & dashboard)
-- **Live push (new, step 1.1):** `GET /api/orders/stream` (Server-Sent Events). Server
-  calls `notifyOrders(restaurantId, kind)` on new order, status change and cancel. Client
-  `EventSource` refreshes in about 0.1 s. Backup polling: every 5 s when the stream is
-  down, every 20 s when up. Red **"Connection lost"** bar (`#connBar`) when offline or
-  after 25 s of failed refreshes; clears on recovery. Auto-reconnect after a server
-  restart is verified. Heartbeat ping every 25 s.
-- **Live connection starts at login on any tab** (`renderAdmin` calls `startKitchenPoll`).
-- **Alerts (step 1.2, delivered; owner confirmation pending):** while any order has
-  status `new`, the sound repeats every 6 s (`window.EXPLODISH_NEW` > 0) until someone
-  taps **Start preparing** (that tap is the "accept"). New order on the Owner tab rings
-  at once and shows a red count badge (`.kbadge`) on the Kitchen tab. **Sound on/off**
-  and **Test alert** buttons in `.pro-sound-bar` (Test alert plays two rings even when
-  muted). Browsers only allow sound after a tap on the page.
-- **Telegram backup alert (step 1.3, delivered; tested only against a FAKE Telegram):**
-  see 3.6.
-- **Tickets (new):** first card is **Live orders**; ordered new first, then preparing,
-  then ready, each oldest first. Big `TABLE A1` label, "Order id · time · N min ago".
-  Changes are bold capitals: red `mod-remove` (starts with No/Without/Skip/−/-),
-  green `mod-add` (starts with +), brown `mod-other`. Cancel button readable.
-  Grouping tickets by table was NOT built (oldest-first was judged more important).
-- Stats (today only), most-added extras, **Order history** (Today / 7 days / 30 days / All
-  time, average order, add-on revenue, add-on share, cancelled, **CSV**). **Numbers match
-  raw orders (verified).**
+- Live push (SSE) with backup polling and a red "Connection lost" bar; repeating alert sound every 6 s while any order is `new` until **Start preparing**; Sound on/off, Test alert; badge on the tab.
+- Tickets: big TABLE label, `Order #N`, changes in bold capitals, **Print** button (80 mm receipt layout via a hidden frame; `public/print.js`), TEST ORDER label.
+- **Rush controls**: Pause/Resume ordering (red bar on every owner tab while paused), tap-to-toggle Sold out for every dish, **Send a test order** (practice order marked TEST,
+  excluded from stats/history/CSV, takes no order number), screen wake lock ("Screen stays awake" note; falls back to advice).
+- **Waiting time** card (minutes shown to customers). **Lock-screen notifications** card (web push, `push.js`, `public/sw.js`, `public/pushsetup.js`; needs https except localhost;
+  iPhone needs Add to Home Screen, iOS 16.4+). **Phone alerts** card (Telegram, only when `TELEGRAM_BOT_TOKEN` is set).
+- Stats today, most-added extras, order history (Today/7/30/All, average order, add-on revenue/share, cancelled, CSV).
 
-### 3.6 Telegram phone alerts (optional, off until a bot token is set)
-- New file `telegram.js`. Switched on only when `TELEGRAM_BOT_TOKEN` is in `.env`. Free.
-- **Owner setup (once, by the founder):** in Telegram open **@BotFather**, send `/newbot`, pick a
-  name and a username ending in `bot`, copy the token. Add to `.env`:
-  `TELEGRAM_BOT_TOKEN=<token>` and optionally `PUBLIC_URL=https://<public address>` (used in the
-  message text). Restart the server. The bot username is fetched automatically.
-  **Never paste the token in chat or commit it** (`.env` is git-ignored).
-- **Per restaurant:** Kitchen tab -> **Phone alerts** card -> **Connect Telegram** opens
-  `https://t.me/<bot>?start=<one-time token>`; pressing Start links that chat (the server learns
-  this by long-polling `getUpdates`, so no public address is needed). Links are single-use and
-  expire after 15 min. Card buttons: Send test message, Disconnect. The card is hidden when the
-  server has no bot token.
-- **Alerts:** every new order sends "New order - Table N, items with changes, total". If it is
-  still `new` after `TELEGRAM_REMINDER_MS` (default 2 min) a "Not accepted yet" reminder is sent,
-  up to 3 times; accepted orders get none. Pending reminders are rebuilt on server start.
-  Telegram failures never block ordering.
-- DB table `telegram_links(restaurant_id, chat_id, linked_at)`; one chat per restaurant (a group
-  chat also works if the link is opened there). Only one server may poll a bot at a time
-  (a second one gets a 409 from Telegram).
-- Tested with `test/telegram.js` against a fake Telegram server (16 checks) and a browser test of
-  the card. **Never tested with the real Telegram** (the sandbox has no internet).
+### 3.5 Alerts and reminders
+- New order -> SSE + sound; Telegram message "New order #N - Table X ..." and lock-screen push (tag per order); if still `new` after 2 min (`TELEGRAM_REMINDER_MS`, `PUSH_REMINDER_MS`)
+  reminders up to 3 times; accepted orders get none. Telegram/push failures never block ordering. Push devices removed automatically on 404/410.
+- VAPID keys are generated once and stored in the database (`kv` table): **back the database up** or every device must re-subscribe. Set `PUSH_CONTACT=mailto:...` before going live.
 
-### 3.5 Visual layer
-- Drawn SVG game-style layers; optional real images in `public/ingredients/` named by
-  ingredient/kind, **off by default** (`var LAYER_IMAGES_ON = true;` near the end of
-  `app.js`). Pro design v2 (`html.pro`, `?classic` shows the old look).
-- Favicon added (inline SVG, matches the layers logo).
+### 3.6 Backups
+- `backup.js`: SQLite online backup, single-file copy, integrity-checked, prunes to newest N. Automatic when `BACKUP_DIR` is set (every `BACKUP_EVERY_HOURS`, default 24; `BACKUP_KEEP` default 14).
+  `npm run backup` by hand. `restore.js <file>` (stop the server first) keeps the old database as `.before-restore-<time>`, refuses damaged files. Off-site copy is manual (`scp`) for now.
 
 ---
 
@@ -249,123 +211,93 @@ No build step. Express + SQLite + vanilla JS.
 
 ```
 menu-app/
-  server.js        routes, auth, sanitisers, rate limits, price check, SSE hub
-  telegram.js      optional Telegram phone alerts (bot token in .env)
-  db.js            SQLite layer + one-time legacy JSON import
-  package.json     "test": "node test/smoke.js && node test/telegram.js"
-  test/smoke.js    24-check smoke test (own server on random port, throwaway DB)
-  test/telegram.js 16-check Telegram test against a fake Telegram server
-  .env             JWT_SECRET=...  (git-ignored, never paste in chat)
-  data/            explodish.db  (git-ignored)
+  server.js        routes, auth, sanitisers, rate limits, price check, SSE hub, test order, pause, health, shutdown
+  db.js            SQLite layer + legacy JSON import + order numbers + push/kv/pause helpers + online backup
+  telegram.js      optional Telegram alerts            push.js    web push alerts (web-push library)
+  backup.js / restore.js                               .env.example  every setting explained     DEPLOY.md  hosting guide
+  deploy/explodish.service, deploy/Caddyfile           package.json  engines node>=20.6; scripts test/backup/restore
+  test/smoke.js (77)  telegram.js (16)  menuparse.js (38)  push.js (23)  backup.js (9)    <- npm test runs all five
   public/
-    index.html     shell + favicon + pro tags. Assets use ABSOLUTE /styles.css, /app.js
-    app.js         one big file (about 2,000+ lines), all three experiences
-    styles.css     base design + later patches (cart, photo toggle, phone layout, tickets)
-    pro.css/pro.js pro design layer + kitchen chime/flash/sound bar
-    vendor/ fonts/ ingredients/(empty)
+    index.html     shell; scripts load in this order: menuparse, menuimport, menupreview, orderguard, rush, print, pushsetup (+ layerart) then app.js
+    app.js         the three experiences (customer, owner, kitchen)        styles.css / pro.css / pro.js   design + animation layer
+    layerart.js    dish artwork (layers, bowls, glasses)                   menuparse.js / menuimport.js    menu import
+    menupreview.js owner preview                                           orderguard.js  retry-safe ordering + pause banner
+    rush.js        rush controls, test order, wake lock                    print.js       ticket printing
+    pushsetup.js   notifications card                                      sw.js, manifest.webmanifest, icons/   service worker + install icons
 ```
-
-- Run: `cd ~/Downloads/menu-app && node --env-file=.env server.js` -> http://localhost:3000
-- URLs: `/admin`, `/r/<slug>`, `/r/<slug>?table=7`. Dev demo account (DB empty, non-prod):
-  `owner@demo.test` / `demo12345`, slug `demo-kitchen`. Owner's real test restaurant:
-  **Thakur ji ki rasoi**, slug `thakur-ji-ki-rasoi` (had no dishes published when checked).
-- Repo: https://github.com/vinayak7j-a11y/explodish (public). `.gitignore` covers
-  `node_modules/ .env data/ data-backup/ .DS_Store add_*.py ... *.bak batch*.py make_*.py`.
-- `EADDRINUSE` on start only means the server is already running: restart with
-  `kill $(lsof -ti :3000) 2>/dev/null; node --env-file=.env server.js`
-  (`kill: not enough arguments` just means nothing was running).
+- Run: `cd ~/Downloads/menu-app && node --env-file=.env server.js` -> http://localhost:3000. URLs: `/admin`, `/r/<slug>`, `/r/<slug>?table=7`, `/healthz`.
+- Owner's real test restaurant: **Thakur ji ki rasoi**, slug `thakur-ji-ki-rasoi`.
+- Repo: https://github.com/vinayak7j-a11y/explodish (public). `.gitignore` covers `node_modules/ .env data/ backups/ ...`.
+- Photo reading needs `tesseract.js`, `tesseract.js-core`, `@tesseract.js-data/eng`; push needs `web-push` (all in package.json).
 
 ---
 
 ## 5. Data model, pricing, API
 
 ### Tables
-`restaurants(id, slug UNIQUE, name, email UNIQUE, password_hash, active, created_at)`,
-`dishes(id, restaurant_id, data JSON)`, `orders(id, restaurant_id, time, data JSON)`, `telegram_links(restaurant_id PK, chat_id, linked_at)`.
+`restaurants(id, slug UNIQUE, name, email UNIQUE, password_hash, active, created_at, prep_minutes, ordering_paused)`, `dishes(id, restaurant_id, data JSON)`,
+`orders(id, restaurant_id, time, data JSON)`, `telegram_links(restaurant_id PK, chat_id, linked_at)`, `push_subscriptions(endpoint PK, restaurant_id, p256dh, auth, label, created_at)`,
+`kv(key, value)` (VAPID keys). Migrations are idempotent (`PRAGMA table_info` then `ALTER`).
 
 ### Dish document
-```json
-{ "id":"…", "name":"…", "mode":"A|B", "basePrice":149, "category":"Burgers",
-  "image":null, "removalRefund":false, "dietary":"veg", "jainFriendly":false, "soldOut":false,
-  "ingredients":[ {"id":"b4","name":"Cheese slice","included":true,"mandatory":false,
-                   "unitPrice":20,"maxQty":3,"allergens":["Dairy"],"requires":[]} ],
-  "modifiers":[ {"id":"mod-spice","name":"Spice","options":[{"label":"Regular","priceDelta":0},
-                                                           {"label":"Spicy","priceDelta":30}]} ] }
-```
-Mode B ingredient: `{id, name, allergens, swappable, swapOptions:[{label, price}]}`.
-`soldOut` changes only via `PATCH /api/dishes/:id/soldout`.
+As before (`id, name, mode A|B, basePrice, category, image, removalRefund, dietary:"veg", jainFriendly, soldOut, ingredients[], modifiers[]`) plus **`needsReview`** (boolean, set by imports, cleared by Mark checked or saving by hand).
+Imported sizes become modifier group `mod-size` (first price = base price). `soldOut` changes only via `PATCH /api/dishes/:id/soldout`.
 
-### Order document and request
-Stored: `{id, time, status:new|preparing|ready|done|cancelled, table|null, total, upsell,
-items:[{dishName, price, mods[], deltas[{label,amount,noChange}], dishId, config, modifierChoices}]}`.
-Mode A `config` = `[{id, qty}]`. Mode B `config` = `[{index, swapChoice}]`.
-Server recomputes total (sum of item prices) and upsell (sum of positive deltas).
-
-### Pricing
-`total = basePrice`; mode A each ingredient `diff = qty − (included?1:0)`: `diff ≥ 0` ->
-`diff × unitPrice`; `diff < 0` -> `removalRefund ? diff × unitPrice : 0`; mode B swaps add
-`swapOptions[choice].price`; modifiers add `priceDelta`. Server 409 `menu_changed` on any
-mismatch, qty over `maxQty`, removed mandatory layer; sold-out dishes -> 409 `{soldOut:[…]}`.
+### Order document
+`{id, number (daily 1,2,3; null for test), time, status new|preparing|ready|done|cancelled, preparingAt, readyAt, table|null, total, upsell, clientId (attempt id), test (practice order), items[...]}`.
+Pricing and server checks unchanged (re-price from the saved menu, 409 `menu_changed`, sold-out 409 `{soldOut:[...]}`).
 
 ### API
-Public: `GET /api/r/:slug`, `GET /api/r/:slug/dishes`, `POST /api/r/:slug/orders`
-(200/10 min), `GET /api/r/:slug/orders/:id/status`, `POST /api/r/:slug/orders/:id/cancel`
-(only while `new`, 60/10 min), `GET /api/qr`.
-Auth: `POST /api/auth/register|login|logout`, `GET /api/auth/me` (a 401 here before login is
-normal).
-Admin: `GET|POST /api/dishes`, `PUT|DELETE /api/dishes/:id`, `PATCH /api/dishes/:id/soldout`,
-`GET /api/orders`, **`GET /api/orders/stream` (SSE)**, `PATCH /api/orders/:id/status`,
-`GET /api/orders.csv`.
-Telegram (admin): `GET /api/telegram/status`, `POST /api/telegram/link`, `POST /api/telegram/test`,
-`DELETE /api/telegram/link`.
-Env: `JWT_SECRET`, `PORT`, `NODE_ENV`, `TRUST_PROXY`, `REPORT_TZ`, `DB_FILE`, `PUBLIC_URL`,
-`TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` (optional), `TELEGRAM_REMINDER_MS` (default 120000),
-`TELEGRAM_API_BASE` (tests only).
+Public: `GET /api/r/:slug` (now includes `orderingPaused`), `GET /api/r/:slug/dishes`, `POST /api/r/:slug/orders` (200/10 min; `clientId` makes retries safe: a repeat returns the first order with 200;
+409 `ordering_paused` when paused), `GET /api/r/:slug/orders/:id/status` (status, number, ageSec, preparingAgeSec, prepMinutes, waiterAfterSec), `POST .../cancel`, `GET /api/qr`, `GET /healthz`.
+Auth: `POST /api/auth/register|login|logout`, `GET /api/auth/me`.
+Admin: dishes CRUD + soldout, `GET /api/orders`, `GET /api/orders/stream` (SSE), `PATCH /api/orders/:id/status`, `GET /api/orders.csv` (test orders excluded),
+`GET|PUT /api/settings` (prepMinutes), `GET|PUT /api/ordering` (paused), `GET /api/config` (publicUrl), **`POST /api/orders/test`**,
+`/api/telegram/*`, `/api/push/status|subscribe|test`, `DELETE /api/push/subscribe`. Service worker at `/sw.js` (never cached).
+Env: `JWT_SECRET`, `PORT`, `NODE_ENV`, `TRUST_PROXY`, `PUBLIC_URL`, `DB_FILE`, `BACKUP_DIR/BACKUP_EVERY_HOURS/BACKUP_KEEP`, `REPORT_TZ`, `WAITER_AFTER_SEC`,
+`TELEGRAM_BOT_TOKEN`, `TELEGRAM_REMINDER_MS`, `PUSH_CONTACT`, `PUSH_REMINDER_MS`, `VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY` (optional; else generated). See `.env.example`.
 
 ---
 
-## 6. What has been done in this chat (all pushed unless noted)
+## 6. What has been done (all pushed; newest first)
 
 | Commit | What |
 |---|---|
-| `5bb2baa` | **P0 fix:** `index.html` used relative `styles.css`/`app.js`, so `/r/<slug>` loaded no CSS/JS. Now absolute. |
-| `68889a5` + tag `v0-baseline` | `npm test` smoke test; rollback tag |
-| `fa548cc` | Cart: Remove, + Another, Total |
-| `bfa7f68` | Photo: layers always shown, See photo toggle, card keeps thumbnail |
-| `ae7f098` | Phone layout: sheet footer padding, owner page no sideways scroll (was 525 px on a 390 px phone), Live orders first, sound pill spacing, readable Cancel button |
-| `dcd0330` | Favicon (the only 404 on the customer page was `/favicon.ico`) |
-| applied locally, **commit unconfirmed** | Swaps in owner form, table validation, higher limits (21 tests); live order updates (24 tests); kitchen step 1.2 (alert/tickets/badge); Telegram alerts step 1.3 (new `telegram.js`, `test/telegram.js`; `npm test` = 24 + 16) |
-
-Feature audit (browser, desktop + phone viewport) **passed**: menu, filters, pricing,
-limits, modifiers, swaps pricing, cart reload, place order, status banner, owner login/
-CRUD/sold-out/photo/QR, kitchen stats/tickets/status/history/CSV, tenant isolation, XSS
-text, cancel rules, Mega Stack + confetti, Print all.
+| `e5e7f3b` | Backup test no longer assumes an empty database |
+| `8235d4e` | Hosting prep: `/healthz`, backups + restore, clean shutdown, PUBLIC_URL for QR codes, HSTS on https, `.env.example`, `DEPLOY.md`, systemd + Caddy files |
+| `e8d4e2e`, `80ad793` | Dependency security updates (0 vulnerabilities) |
+| `4ab99ad` | Steps 1.7 + 1.8: print ticket, send test order, wake lock, order number in Telegram, no drag hint on ingredient dishes |
+| `45acd53` | Step 1.6: rush controls (pause ordering, sold-out from kitchen) |
+| `80c1d9a` | Lock-screen notifications (web push) |
+| `d521557` | Step 1.5: retry-safe ordering, Retry bar, cart kept |
+| `26f9c05` | Owner menu preview (phone frame, ordering off) |
+| `2873c1a` | Better dish graphics (layers, bowls, glasses, build-up animation) |
+| `c82d4e9` | Menu import: paste or photo -> review -> publish -> undo |
+| `59f7533` | Step 1.4: order number + progress track + waiting time + waiter message |
+| `17bef16` and earlier | Kitchen alerts, Telegram, live updates (SSE), swaps, cart controls, photo toggle, phone layout fixes, favicon, `npm test`, absolute asset paths (P0 fix) |
 
 ---
 
 ## 7. Verified vs UNVERIFIED, and known issues
 
-**Owner-confirmed on their machine:** `npm test` passes (18, then 21, then 24 after patches);
-customer page loads styled with Table chip; QR codes generate; admin shows Table QR grid.
-**Everything else is verified only in the assistant's sandbox Chromium** (desktop + 390 px
-emulation, mostly DOM-driven clicks).
+**Owner-confirmed on their machine:** all five `npm test` groups pass; paste import published 3 dishes; the new owner screens load; commits pushed.
+**Verified only in the assistant's sandbox Chromium (desktop + 390 px emulation):** menu import with OCR on two synthetic menus, publish/undo, customer menu with new art for all 9 templates,
+stepper add/remove, owner preview (0 orders created from the frame), lost-reply/offline/500/retry flows, pause/resume/sold-out flow, test order + ticket rendering, service worker showing a pushed notification, Mode B hint hidden.
 
 UNVERIFIED / untested:
-- Real phone and **Safari/iPad**; sound actually audible (the tests count sounds the page
-  asked for); Test alert volume; a **locked phone** or background tab may pause sound.
-- Dragging layers (owner Sortable and customer drag) not tested by automation.
-- **Telegram with the real Telegram service** (only a fake server was used); message wording; whether
-  Telegram delivers while the phone is locked (it normally does, but not tried).
-- Live updates through a **Cloudflare/ngrok tunnel** (heartbeat is in place but untried).
-- Mode B publish with allergens; printing a real QR sheet; the kitchen minutes-ago text only
-  updates when the screen redraws.
-- Photoreal layer images (`LAYER_IMAGES_ON`) and pro v2 visual polish on all screens.
+- **Real phones and Safari/iPad**; sound audible; locked phone behaviour; wake lock on real devices.
+- **Real Telegram** (only a fake server). **Real web push delivery** (no internet in the sandbox; only the server logic, the library's request building, and the service worker display were tested). iPhone Add to Home Screen flow.
+- **A real printer**; paper width/margins.
+- **OCR on real photographed menus** (only synthetic images: clean table menu 8/8 dishes; dotted-leader menu about 9/14 with several garbled names). Hindi/Devanagari menus unsupported.
+- Dragging layers by hand (customer and owner) - never exercised by automation.
+- Two kitchen devices at once: pause state refreshes on focus, not instantly.
+- **`DEPLOY.md` has never been run on a real server.** Real https certificate, off-site backup copy, and nightly backup on a real host untested.
+- Very tall stacks ("Mega Stack" with every extra) fit-to-stage not checked.
 
 Known issues not fixed:
-- Thin strip of content above the tab bar (cause unknown).
-- Owner live preview is hidden at phone width (works on desktop).
-- Cart is still a small popover over the menu.
-- Dead non-veg code in `app.js`; `app.js` is a very large file.
+- Cart is still a small popover (full cart sheet planned in the redesign). Menu card picture is small on phones. `app.js` is very large.
+- Imported dishes use template layers/allergens (hence "Check ingredients"); descriptions from menus are not stored.
+- Thin strip above the tab bar (cause unknown). Owner live preview of the by-hand form is hidden at phone width.
 
 ---
 
@@ -423,82 +355,39 @@ renderDetailOverlay, renderIngredientRowsB, parseSwapText, swapText, saveDraft`.
 
 ---
 
-## 9. Roadmap v2 (status as of this handoff)
+- Tools lessons added: `git checkout .` in the clone **reverts tracked files you edited** (lost work once): copy files you want to keep first. `git stash -u` also hides new files.
+  Stale servers from earlier test runs keep ports and databases (delete `*.db`, `-wal`, `-shm`, kill `node server.js`). Do not background a server inside a command that must return (use `setsid nohup ... &` and separate calls).
+  Headless Chromium wipes localStorage on reload (test persistence by rebuilding state instead). Puppeteer `Notification` needs `overridePermissions`; push subscribe fails offline (expected in the sandbox).
+  Patch builder pattern: a Python template with `replace_once(path, anchor, new, marker, what)`, embedded base64 for new files, built by a small generator script; verify on a fresh clone, run twice.
 
-Rules for every step: never lose an order (orders first); owner does at most 3 things;
-no paid AI for 10 customers; one change per step, tested in a real browser, say what is
-UNVERIFIED; `git tag` before each phase; measure add-on share and average order value.
-Legend: DONE, DELIVERED (applied by owner, confirmation pending), TODO.
+---
 
-**Phase 0: safety net**
-- 0.1 Baseline screens: DONE (assistant ran the app itself; fixed P0 and layout bugs).
-- 0.2 One-command test (`npm test`): DONE. Browser-driven order test: TODO (optional).
-- 0.3 Git hygiene: tag `v0-baseline` DONE; refresh PROJECT_CONTEXT (this file) DONE; one
-  branch per phase TODO.
-- 0.4 Event tracking (menu_open, dish_open, addon_added, cart_open, order_placed; anonymous):
-  TODO. History card should then show scans vs orders vs add-on share.
-- 0.5 Feature audit: DONE (see 6). Leftover: manual drag-reorder check, Safari/phone.
+## 9. Roadmap v3 (status as of this handoff)
 
-**Phase 1: orders must never be missed**
-- 1.1 Live push + connection bar: DONE (commit status unconfirmed).
-- 1.2 Kitchen screen: repeating alert, accept, Test alert, readable tickets, badge:
-  DELIVERED. Possible follow-ups: ticket grouping by table, tablet landscape layout,
-  keep-screen-awake, installable PWA.
-- 1.3 Telegram backup alert: DELIVERED (see 3.6). Done when a locked phone still rings: needs the
-  owner to create the bot and try it for real; check current Telegram bot rules.
-- **1.4 Customer progress: NEXT.** Order number, Received/Preparing/Ready track, ETA from an
-  owner-set prep time (no fake precision), "a waiter will come" if not accepted in time.
-- 1.5 Failure-proof ordering: idempotency key (retry never double-orders), offline
-  detection, cart kept, clear Retry.
-- 1.6 Rush controls: "Pause ordering" switch, sold-out toggle from the kitchen screen.
-- 1.7 Printing: print-friendly ticket button (thermal printers later).
-- 1.8 Test order: owner presses "Send test order" and sees/hears it arrive.
+Rules for every step: never lose an order; owner does at most 3 things; no paid AI for the first 10 customers; one change per step, tested in a real browser, say what is UNVERIFIED; measure add-on share and average order value.
 
-**Phase 2: restaurant lifecycle (funnel)**
-2.1 data (status, paid_until, plan, whatsapp, preview_token; idempotent migration) ·
-2.2 signup + plan + menu photo/PDF upload (10 MB, files not in DB) · 2.3 `/ops` back-office
-(queue, image beside editor, status buttons, payment log, WhatsApp templates, read-only view,
-password reset) · 2.4 bulk-paste import (`Name - price`, ₹, `/-`, `99/149` sizes, headings,
-review screen, undo; goal: 5 real menus with under 20% of rows needing fixes) · 2.5 preview
-mode (banner, unguessable link, 7-day expiry, TEST orders ring the owner's kitchen, excluded
-from stats) · 2.6 go live (+ printable QR pack PDF with short link) · 2.7 expiry (plain
-fallback, 3-day grace, reminders) · 2.8 weekly proof report · 2.9 owner onboarding checklist
-· 2.10 plans/terms/privacy/refund (professional review; not legal or tax advice).
+**Phase 0 safety net:** DONE (baseline, `npm test` now 5 groups, tags). Left: event tracking (menu_open, dish_open, addon_added, cart_open, order_placed) to show scans vs orders vs add-on share; one branch per phase.
 
-**Phase 3: exploding experience**
-3.1 bake-off page (2D vs 3D, cheap Android) · 3.2 art direction (about 24 veg layers, under
-40 KB each) · 3.3 interaction (stagger spring, drag, snap, haptics, undo, +/− always) ·
-3.4 light game layer with owner off-switch · 3.5 Mode B icons/spice/swaps · 3.6 low-end
-fallback · 3.7 optional dish photo (partly done: toggle).
+**Phase 1 orders must never be missed:** 1.1 live push DONE, 1.2 kitchen alerts DONE, 1.3 Telegram DELIVERED (real bot untested), 1.4 progress track DONE, 1.5 failure-proof ordering DONE,
+1.6 rush controls DONE, 1.7 print ticket DONE (real printer untested), 1.8 test order DONE. Plus web push (DELIVERED, real delivery untested), wake lock, retry safety.
+Possible follow-ups: ticket grouping by table, tablet landscape layout, auto-print (needs kiosk printing), per-table order cooldown, rate limit message when many customers share one IP.
 
-**Phase 4: UI redesign**
-4.1 direction (dark vs light mock-ups) · 4.2 design tokens (replace `html.pro` overrides) ·
-4.3 customer screens (hero, sticky category bar, bottom-sheet dish, cart sheet, order track,
-skeletons, empty/error/sold-out states) · 4.4 owner screens (home "today in 3 numbers",
-simple vs advanced) · 4.5 auth screens · 4.6 copy pass (Hindi later) · 4.7 accessibility
-and speed QA · 4.8 landing page with live demo.
+**Phase 5 hosting (moved up, because phones need https for lock-screen notifications):**
+5.1 hosting - **NEXT: set up a first test server with the owner using `DEPLOY.md`** (provider and domain not chosen). 5.2 production config DONE in code (`.env.example`, JWT check, `TRUST_PROXY`, `PUBLIC_URL`, HSTS).
+5.3 nightly backups DONE in code (manual off-site copy; test a restore on the real host). 5.4 monitoring: `/healthz` exists; add an uptime monitor + log review. 5.5 pilot kit. 5.6 run the pilot.
+Pilot steps: real https address, `TRUST_PROXY=1`, 5-8 real dishes via the importer, record orders, average order and add-on share, ask permission to use numbers.
 
-**Phase 5: hosting and pilot**
-5.1 hosting · 5.2 production config · 5.3 nightly backups with a tested restore · 5.4
-monitoring · 5.5 pilot kit (visit plan, what to record, permission to use numbers) · 5.6 run
-the pilot (P0 lost order, P1 confusing, P2 polish).
-**Pilot setup steps to prepare:** tunnel (Cloudflare Tunnel or ngrok, check free limits),
-open admin through the public URL (QR links use it) or add `PUBLIC_URL`, set
-`TRUST_PROXY=1`, 5-8 real dishes, record orders, average order and add-on share.
+**Phase 2 restaurant lifecycle (funnel):** 2.1 data (status waiting/building/preview/live/expired, paid_until, plan, whatsapp, preview_token) - 2.2 signup + plan + menu photo/PDF upload (10 MB, files not in DB) -
+2.3 `/ops` back-office (queue, image beside the editor, status buttons, payment log, WhatsApp templates, read-only view, password reset) - 2.4 bulk import: **mostly DONE** (paste + OCR + review + undo; PDF input and a "5 real menus under 20% fixes" test remain) -
+2.5 preview mode (7-day private link, TEST orders ring the owner's kitchen; the practice-order mechanism already exists) - 2.6 go live + printable QR pack - 2.7 expiry (plain-menu fallback, grace, reminders) -
+2.8 weekly proof report - 2.9 onboarding checklist - 2.10 plans/terms/privacy/refund (professional review).
 
-**Phase 6: growth** sales assets, funnel dashboard, support playbook, referral (after paying
-customers).
+**Phase 3 exploding experience:** art for layers/bowls/glasses DONE (original SVG by code, no licences). Left: 2D vs 3D bake-off on a cheap Android phone, smoother drag with snap/haptics/undo, optional game layer with owner off-switch,
+low-end fallback, labels with lines to each layer, optional dish photo polish.
+**Phase 4 UI redesign:** dark vs light mock-ups, design tokens, bottom-sheet dish, full cart sheet, skeletons, owner home "today in 3 numbers", auth screens, copy pass (Hindi later), accessibility + speed QA, landing page with a live demo menu.
+**Phase 6 growth / Phase 7 edge cases:** unchanged from v4 (sales assets, funnel dashboard, referral; re-price when a dish changes in a cart, long menus, account export/deletion, AI import later, Razorpay AutoPay after about 10 customers, POS, Hindi, multi-outlet, combos, GST invoices).
 
-**Phase 7: edge cases and later:** per-table order cooldown (anti-flood), re-price politely
-when a dish changes while in a cart, midnight/timezone stats, long menus and big images,
-account export/deletion, session expiry, safe migrations; later and only when triggered: AI
-menu import, Razorpay AutoPay, POS integration (Petpooja, Posist), Hindi, multi-outlet,
-combos/thali, GST invoices (ask an accountant).
-
-Polish checklist (finish line): new owner live in under 3 minutes of their own effort;
-a customer adds an extra in 3 taps or fewer; kitchen alert in under 3 s and cannot be
-missed; works one-handed on a cheap phone; every error has a friendly message; nothing
-described as tested unless it was.
+Polish checklist (finish line): a new owner is live in under 3 minutes of their own effort; a customer adds an extra in 3 taps or fewer; kitchen alert in under 3 s and cannot be missed; works one-handed on a cheap phone; every error has a friendly message; nothing described as tested unless it was.
 
 ---
 
@@ -506,33 +395,28 @@ described as tested unless it was.
 
 1. Start: `cd ~/Downloads/menu-app` then `node --env-file=.env server.js`
 2. Restart: `kill $(lsof -ti :3000) 2>/dev/null; node --env-file=.env server.js`
-3. Test: `npm test` (expect `PASS: 24 passed, 0 failed` then `PASS: 16 passed, 0 failed`)
-4. Commit pending work (only if `git status -sb` shows changes):
-   `git add server.js db.js telegram.js package.json public/app.js public/pro.js public/pro.css public/styles.css test/smoke.js test/telegram.js`
-   `git commit -m "Swaps, live updates, kitchen alerts, Telegram alerts"`
-   `git push`
-5. Phone test on the same wifi: `ipconfig getifaddr en0`, open `http://<that number>:3000/admin`,
-   regenerate QR codes, scan. macOS may ask to allow incoming connections.
-6. Rollback: `git checkout v0-baseline` to look, `git checkout main` to return (separate
-   lines, no comments).
+3. Test: `npm test` (expect `PASS: 77`, `16`, `38`, `23`, `9`)
+4. Apply a patch: `python3 ~/Downloads/patch-<name>.py` then `npm test`, restart, then the `git add ... / git commit -m ... / git push` block given with that patch.
+5. Backup now: `npm run backup` (makes `backups/explodish-<time>.db`). Restore (server stopped): `node restore.js backups/<file>.db`.
+6. Phone test on the same wifi: `ipconfig getifaddr en0`, open `http://<that number>:3000/admin`. (Lock-screen notifications need https, so not on this address.)
+7. Dependencies: if `npm install` hangs, `Ctrl+C` then `npm install --ignore-scripts`. `npm audit fix` currently reports 0 vulnerabilities.
+8. Rollback: `git checkout v0-baseline` to look, `git checkout main` to return (separate lines, no comments in zsh blocks).
 
 ---
 
 ## 11. Open questions (the owner has not answered; ask one at a time)
 
-1. Which device will the kitchen use (phone, tablet, laptop)? It decides the kitchen layout.
-2. Which city/area and which kind of restaurants first? It decides outreach and the demo menu.
-3. Which plans and what price? (Proposed: one monthly plus a discounted yearly; decide after pilots.)
-4. Lapsed subscription: plain-menu fallback (recommended) or menu off? Refund/guarantee rule?
-5. Dark or light design direction? (Decide from the two mock-ups.)
-6. Did the owner create the Telegram bot and get a real alert on a locked phone? Did the
-   **Test alert** sound loud enough on the kitchen device? Does layer drag-reorder
-   work by hand in Owner tools?
+1. Did the Chrome notification test work on the Mac, and did a real Telegram bot alert reach a locked phone?
+2. Hosting: which provider (suggested: a small Mumbai/Bangalore VPS) and which domain? Who pays and in what currency (some providers need a dollar card)?
+3. Which device will the kitchen use (phone, tablet, laptop)? It decides the kitchen layout and whether web push, Telegram or a printer matters most.
+4. Which city/area and which kind of restaurants first? It decides outreach and the demo menu.
+5. Plans and price (proposed: one monthly plus a discounted yearly; decide after pilots). Lapsed subscription: plain-menu fallback (recommended) or menu off? Refund rule?
+6. Dark or light design direction (decide from two mock-ups)?
+7. Can they send one real restaurant menu photo, so OCR accuracy can be measured on a real one?
 
 ---
 
 ## 12. Starting message for the new chat (the owner pastes this)
 
-See the short message provided alongside this file. In short: attach this file, link the
-repo, ask the assistant to continue from step 1.4 (and first check how Telegram went), keep replies short, give paste-in
-terminal blocks, test in a real browser first, and say honestly what is unverified.
+Attach this file, link the repo, and ask the assistant to read section 0, check `git log` and `npm test` output they paste, and continue with the first test server (using `DEPLOY.md`) or whatever the owner picks.
+Keep replies short, give a downloadable `patch-*.py` plus short Terminal blocks, test in a real browser first, and say honestly what is unverified.
