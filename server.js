@@ -109,7 +109,7 @@ function requireAuth(req, res, next) {
 
 // What the logged-in owner sees about their own account.
 function ownerRestaurant(r) {
-  return { id: r.id, slug: r.slug, name: r.name, email: r.email, active: r.active, createdAt: r.createdAt };
+  return { id: r.id, slug: r.slug, name: r.name, email: r.email, active: r.active, createdAt: r.createdAt, status: r.status, plan: r.plan, paidUntil: r.paidUntil };
 }
 // What the public (customers scanning a QR code) sees. No email, no dates.
 function customerRestaurant(r) {

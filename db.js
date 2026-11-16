@@ -57,9 +57,19 @@ if (!db.prepare('PRAGMA table_info(restaurants)').all().some(c => c.name === 'or
   db.exec('ALTER TABLE restaurants ADD COLUMN ordering_paused INTEGER NOT NULL DEFAULT 0');
 }
 
+/* step 2.1: restaurant lifecycle (idempotent migrations). Existing restaurants stay 'live', so nothing changes for them. */
+const STATUSES = ['waiting', 'building', 'preview', 'live', 'expired'];
+{
+  const have = new Set(db.prepare('PRAGMA table_info(restaurants)').all().map(c => c.name));
+  const add = { status: "TEXT NOT NULL DEFAULT 'live'", plan: 'TEXT', whatsapp: 'TEXT', paid_until: 'TEXT', preview_token: 'TEXT' };
+  for (const [col, def] of Object.entries(add)) if (!have.has(col)) db.exec('ALTER TABLE restaurants ADD COLUMN ' + col + ' ' + def);
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_restaurants_preview ON restaurants(preview_token)');
+}
+
 const toRestaurant = r => r && ({
   id: r.id, slug: r.slug, name: r.name, email: r.email,
-  passwordHash: r.password_hash, active: !!r.active, orderingPaused: !!r.ordering_paused, createdAt: r.created_at
+  passwordHash: r.password_hash, active: !!r.active, orderingPaused: !!r.ordering_paused, createdAt: r.created_at,
+  status: r.status || 'live', plan: r.plan || null, whatsapp: r.whatsapp || null, paidUntil: r.paid_until || null, previewToken: r.preview_token || null
 });
 
 const q = {
@@ -88,12 +98,14 @@ function slugify(name) {
 
 /* Creates a restaurant; returns null if the email is already taken.
    Email check + slug choice + insert run in one transaction. */
-const createRestaurant = db.transaction(({ id, name, email, passwordHash, active = true, createdAt }) => {
+const createRestaurant = db.transaction(({ id, name, email, passwordHash, active = true, createdAt, status = 'live' }) => {
   if (q.restByEmail.get(email)) return null;
   const base = slugify(name);
   let slug = base, n = 2;
   while (q.restBySlug.get(slug)) { slug = `${base}-${n}`; n++; }
+  if (!STATUSES.includes(status)) throw new Error('Unknown status: ' + status);
   q.insRest.run(id, slug, name, email, passwordHash, active ? 1 : 0, createdAt);
+  if (status !== 'live') db.prepare('UPDATE restaurants SET status = ? WHERE id = ?').run(status, id);
   return toRestaurant(q.restById.get(id));
 });
 
@@ -148,6 +160,20 @@ module.exports = {
   setTelegramChat: (rid, chatId) => db.prepare('INSERT INTO telegram_links (restaurant_id, chat_id, linked_at) VALUES (?, ?, ?) ON CONFLICT(restaurant_id) DO UPDATE SET chat_id = excluded.chat_id, linked_at = excluded.linked_at').run(rid, String(chatId), new Date().toISOString()),
   clearTelegramChat: rid => db.prepare('DELETE FROM telegram_links WHERE restaurant_id = ?').run(rid),
   listTelegramRestaurants: () => db.prepare('SELECT restaurant_id FROM telegram_links').all().map(r => r.restaurant_id),
+  STATUSES,
+  findByPreviewToken: t => (t ? (toRestaurant(db.prepare('SELECT * FROM restaurants WHERE preview_token = ?').get(String(t))) || null) : null),
+  /* Changes only the lifecycle fields that are passed. An unknown status is refused and nothing is changed. */
+  setLifecycle: (rid, f) => {
+    const cols = { status: 'status', plan: 'plan', whatsapp: 'whatsapp', paidUntil: 'paid_until', previewToken: 'preview_token' };
+    const sets = [], vals = [];
+    for (const [k, col] of Object.entries(cols)) {
+      if (!(k in f)) continue;
+      if (k === 'status' && !STATUSES.includes(f.status)) throw new Error('Unknown status: ' + f.status);
+      sets.push(col + ' = ?'); vals.push(f[k] ?? null);
+    }
+    if (!sets.length) return 0;
+    return db.prepare('UPDATE restaurants SET ' + sets.join(', ') + ' WHERE id = ?').run(...vals, rid).changes;
+  },
   /* Retry safety: the order we already stored for this attempt id (last 24 hours), or null. */
   findOrderByClientId: (rid, cid) => {
     const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
