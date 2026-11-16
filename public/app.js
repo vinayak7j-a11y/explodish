@@ -65,9 +65,9 @@ async function apiLogin(email, password){
   if(!r.ok) throw new Error(data.error || 'Login failed');
   return data;
 }
-async function apiRegister(name, email, password){
+async function apiRegister(name, email, password, whatsapp, plan){
   const r = await fetch('/api/auth/register', {
-    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, email, password})
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, email, password, whatsapp, plan})
   });
   const data = await r.json();
   if(!r.ok) throw new Error(data.error || 'Registration failed');
@@ -356,12 +356,29 @@ function renderAuthGate(authMode){
       ` : ''}
       <div class="field"><label>Email</label><input type="email" id="authEmail" placeholder="you@restaurant.com"></div>
       <div class="field"><label>Password</label><input type="password" id="authPassword" placeholder="${authMode==='register'?'At least 8 characters':''}"></div>
+      ${authMode==='register' ? `
+        <div class="field"><label>WhatsApp number</label><input type="tel" id="authWhatsapp" placeholder="e.g. 98765 43210" autocomplete="tel"></div>
+        <div class="field"><label>Plan</label>
+          <div class="auth-tabs" id="planPick" style="margin-bottom:0;">
+            <button type="button" class="auth-tab active" data-plan="monthly">Monthly</button>
+            <button type="button" class="auth-tab" data-plan="yearly">Yearly (discounted)</button>
+          </div>
+        </div>
+        <div class="auth-hint" style="margin:0 0 12px;">Your private preview comes first. We send it to your WhatsApp.</div>
+      ` : ''}
       <button class="btn" id="authSubmit" style="width:100%;margin-top:6px;">${authMode==='register'?'Create account':'Log in'}</button>
       ${authMode==='login' ? `<div class="auth-hint">Demo login: owner@demo.test / demo12345</div>` : ''}
     </div>
   `;
-  panel.querySelectorAll('.auth-tab').forEach(btn=>{
+  panel.querySelectorAll('.auth-tab[data-mode]').forEach(btn=>{
     btn.addEventListener('click', ()=> renderAuthGate(btn.dataset.mode));
+  });
+  let chosenPlan = 'monthly';
+  panel.querySelectorAll('#planPick .auth-tab').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      chosenPlan = btn.dataset.plan;
+      panel.querySelectorAll('#planPick .auth-tab').forEach(b=> b.classList.toggle('active', b===btn));
+    });
   });
   document.getElementById('authSubmit').addEventListener('click', async ()=>{
     const email = document.getElementById('authEmail').value.trim();
@@ -372,7 +389,11 @@ function renderAuthGate(authMode){
       if(authMode==='register'){
         const name = document.getElementById('authName').value.trim();
         if(!name){ throw new Error('Give your restaurant a name'); }
-        await apiRegister(name, email, password);
+        const whatsapp = (document.getElementById('authWhatsapp').value || '').trim();
+        if(!whatsapp){ throw new Error('Add your WhatsApp number so we can send your preview'); }
+        await apiRegister(name, email, password, whatsapp, chosenPlan);
+        renderSignupUpload();
+        return;
       } else {
         await apiLogin(email, password);
       }
@@ -382,6 +403,60 @@ function renderAuthGate(authMode){
       errEl.style.display = 'block';
     }
   });
+}
+
+/* ---------------- sign-up step 2: menu photo or PDF upload ---------------- */
+function renderSignupUpload(){
+  const MAX_BYTES = 10 * 1024 * 1024, MAX_FILES = 5;
+  const OK_TYPES = ['image/jpeg','image/png','image/webp','application/pdf'];
+  let done = 0;
+  const panel = document.getElementById('panel');
+  panel.innerHTML = `
+    <div class="auth-card">
+      <h2 style="margin:0 0 6px;font-size:18px;">Upload your menu</h2>
+      <div class="auth-hint" style="text-align:left;margin:0 0 14px;opacity:1;">Take a clear photo of each menu page, or choose a PDF. Up to 5 files, 10 MB each. We build your menu from it and send you a private preview on WhatsApp.</div>
+      <input type="file" id="menuFiles" accept="image/jpeg,image/png,image/webp,application/pdf" multiple style="display:none;">
+      <button class="btn" id="menuPick" style="width:100%;">Choose photos or PDF</button>
+      <div id="menuList" style="margin-top:12px;font-size:13px;"></div>
+      <button class="btn secondary" id="menuDone" style="width:100%;margin-top:14px;">Skip for now</button>
+    </div>`;
+  const input = document.getElementById('menuFiles');
+  const list = document.getElementById('menuList');
+  const doneBtn = document.getElementById('menuDone');
+  const pickBtn = document.getElementById('menuPick');
+  function line(text, ok){
+    const d = document.createElement('div');
+    d.style.cssText = 'padding:6px 0;' + (ok === false ? 'color:#ff9d8a;' : ok === true ? 'color:#8fd19e;' : 'opacity:.8;');
+    d.textContent = text;
+    list.appendChild(d);
+    return d;
+  }
+  function sizeText(n){ return n >= 1048576 ? (n/1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n/1024)) + ' KB'; }
+  async function sendOne(file){
+    if(done >= MAX_FILES){ line(file.name + ': you can upload up to 5 files', false); return; }
+    if(file.size > MAX_BYTES){ line(file.name + ': bigger than 10 MB. Please choose a smaller photo or PDF', false); return; }
+    if(file.type && !OK_TYPES.includes(file.type)){ line(file.name + ': please choose a JPG, PNG or WEBP photo, or a PDF', false); return; }
+    const row = line('Uploading ' + file.name + ' ...');
+    try{
+      const r = await fetch('/api/menu-files', { method:'POST', headers:{'Content-Type': file.type || 'application/octet-stream'}, body: file });
+      let data = {}; try{ data = await r.json(); }catch(e){}
+      if(!r.ok) throw new Error(r.status === 413 ? 'bigger than 10 MB' : (data.error || 'upload failed'));
+      done++;
+      row.style.color = '#8fd19e';
+      row.textContent = 'Uploaded ' + file.name + ' (' + sizeText(file.size) + ')';
+      doneBtn.textContent = 'Continue to my dashboard';
+    }catch(e){
+      row.style.color = '#ff9d8a';
+      row.textContent = file.name + ': ' + (e instanceof TypeError ? 'could not connect' : e.message) + '. Please try again';
+    }
+  }
+  input.addEventListener('change', async ()=>{
+    pickBtn.disabled = true; doneBtn.disabled = true;
+    for(const f of Array.from(input.files)) await sendOne(f);
+    input.value = ''; pickBtn.disabled = false; doneBtn.disabled = false;
+  });
+  pickBtn.addEventListener('click', ()=> input.click());
+  doneBtn.addEventListener('click', ()=> window.location.reload());
 }
 
 function markImagesLoaded(){

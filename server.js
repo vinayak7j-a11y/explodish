@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
 const QRCode = require('qrcode');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -109,7 +110,7 @@ function requireAuth(req, res, next) {
 
 // What the logged-in owner sees about their own account.
 function ownerRestaurant(r) {
-  return { id: r.id, slug: r.slug, name: r.name, email: r.email, active: r.active, createdAt: r.createdAt, status: r.status, plan: r.plan, paidUntil: r.paidUntil };
+  return { id: r.id, slug: r.slug, name: r.name, email: r.email, active: r.active, createdAt: r.createdAt, status: r.status, plan: r.plan, whatsapp: r.whatsapp, paidUntil: r.paidUntil };
 }
 // What the public (customers scanning a QR code) sees. No email, no dates.
 function customerRestaurant(r) {
@@ -204,15 +205,28 @@ app.post('/api/auth/register', rateLimit(10, 60 * 60 * 1000), async (req, res) =
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
   if (Buffer.byteLength(password) > 72) return res.status(400).json({ error: 'Password must be 72 bytes or fewer' });
 
+  let plan = null, whatsapp = null;
+  const planRaw = req.body.plan, waRaw = req.body.whatsapp;
+  if (planRaw !== undefined && planRaw !== null && planRaw !== '') {
+    if (planRaw !== 'monthly' && planRaw !== 'yearly') return res.status(400).json({ error: 'Please choose the monthly or the yearly plan' });
+    plan = planRaw;
+  }
+  if (waRaw !== undefined && waRaw !== null && waRaw !== '') {
+    const wa = typeof waRaw === 'string' ? waRaw.replace(/[\s\-().]/g, '') : '';
+    if (!/^\+?\d{10,15}$/.test(wa)) return res.status(400).json({ error: 'Please enter a valid WhatsApp number (10 to 15 digits)' });
+    whatsapp = wa;
+  }
+
   const passwordHash = await bcrypt.hash(password, 10);
   const restaurant = store.createRestaurant({
     id: uid(), name: cleanName, email: emailNorm, passwordHash,
-    active: true, // self-serve for now — no billing gate yet, see PROJECT_CONTEXT.md
+    active: true, status: 'waiting', // self-serve for now — no billing gate yet, see PROJECT_CONTEXT.md
     createdAt: new Date().toISOString()
   });
   if (!restaurant) return res.status(409).json({ error: 'An account with that email already exists' });
+  if (plan || whatsapp) store.setLifecycle(restaurant.id, { plan, whatsapp });
   setAuthCookie(res, restaurant.id);
-  res.status(201).json(ownerRestaurant(restaurant));
+  res.status(201).json(ownerRestaurant(store.findById(restaurant.id)));
 });
 
 app.post('/api/auth/login', rateLimit(10, 15 * 60 * 1000), async (req, res) => {
@@ -236,6 +250,50 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json(ownerRestaurant(store.findById(req.restaurantId)));
+});
+
+/* ---------- Menu files (step 2.2) ---------- */
+/* At sign-up the owner can upload photos or a PDF of their paper menu. The files are kept on disk, not in the
+   database, in one folder per restaurant. The file type comes from the first bytes of the file, never from its name. */
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, 'data', 'uploads');
+const MAX_MENU_FILE = 10 * 1024 * 1024;
+const MAX_MENU_FILES = 5;
+const MENU_FILE_NAME = /^[a-z0-9]{6,12}-[a-f0-9]{8}\.(png|jpg|webp|pdf)$/;
+function menuFileType(b) {
+  if (b.length > 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png';
+  if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg';
+  if (b.length > 12 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') return 'webp';
+  if (b.length > 5 && b.subarray(0, 5).toString('latin1') === '%PDF-') return 'pdf';
+  return null;
+}
+function menuDir(rid) { return path.join(UPLOADS_DIR, String(rid)); }
+function listMenuFiles(rid) {
+  let names = [];
+  try { names = fs.readdirSync(menuDir(rid)); } catch (e) { return []; }
+  return names.filter(n => MENU_FILE_NAME.test(n)).map(n => {
+    const st = fs.statSync(path.join(menuDir(rid), n));
+    return { name: n, type: n.split('.').pop(), size: st.size, time: st.mtime.toISOString() };
+  }).sort((a, b) => a.time.localeCompare(b.time) || a.name.localeCompare(b.name));
+}
+app.get('/api/menu-files', requireAuth, (req, res) => res.json(listMenuFiles(req.restaurantId)));
+app.post('/api/menu-files', requireAuth, rateLimit(60, 10 * 60 * 1000), express.raw({ type: () => true, limit: MAX_MENU_FILE }), async (req, res, next) => {
+  try {
+    const buf = req.body;
+    if (!Buffer.isBuffer(buf) || !buf.length) return res.status(400).json({ error: 'No file received' });
+    const ext = menuFileType(buf);
+    if (!ext) return res.status(400).json({ error: 'Please upload a JPG, PNG or WEBP photo, or a PDF' });
+    if (listMenuFiles(req.restaurantId).length >= MAX_MENU_FILES) return res.status(409).json({ error: 'You can upload up to ' + MAX_MENU_FILES + ' menu files' });
+    const name = Date.now().toString(36) + '-' + crypto.randomBytes(4).toString('hex') + '.' + ext;
+    await fs.promises.mkdir(menuDir(req.restaurantId), { recursive: true });
+    await fs.promises.writeFile(path.join(menuDir(req.restaurantId), name), buf, { flag: 'wx' });
+    res.status(201).json({ name, type: ext, size: buf.length });
+  } catch (e) { next(e); }
+});
+app.delete('/api/menu-files/:name', requireAuth, (req, res) => {
+  const name = String(req.params.name);
+  if (!MENU_FILE_NAME.test(name)) return res.status(400).json({ error: 'Invalid file name' });
+  try { fs.unlinkSync(path.join(menuDir(req.restaurantId), name)); } catch (e) { return res.status(404).json({ error: 'File not found' }); }
+  res.json({ ok: true });
 });
 
 /* ---------- Dishes ---------- */
