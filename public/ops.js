@@ -114,6 +114,7 @@
       ]),
       el('div', { class: 'err', text: state.error }),
       state.message ? el('div', { class: 'muted', text: state.message }) : null,
+      el('div', { class: 'row' }, [el('button', { class: 'btn', text: 'Open their menu editor', onclick: openEditor })]),
       el('h2', { text: 'Status' }),
       el('div', { class: 'row' }, statusBtns),
       el('h2', { text: 'Paid until' }),
@@ -135,6 +136,13 @@
       state.message = 'Saved';
     } catch (e) { state.error = e.message; }
     detailView();
+  }
+  async function openEditor() {
+    state.error = ''; state.message = '';
+    try {
+      const res = await api('POST', '/api/ops/restaurants/' + encodeURIComponent(state.openId) + '/open-as-owner');
+      window.location.href = res.url || '/admin';
+    } catch (e) { state.error = e.message; detailView(); }
   }
   async function openRestaurant(id) {
     state.openId = id; state.view = 'detail'; state.files = []; state.error = ''; state.message = '';

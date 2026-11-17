@@ -105,6 +105,7 @@ function requireAuth(req, res, next) {
   const restaurant = store.findById(payload.restaurantId);
   if (!restaurant || !restaurant.active) return res.status(401).json({ error: 'Account not available' });
   req.restaurantId = restaurant.id;
+  req.viaOps = payload.viaOps === true;
   next();
 }
 
@@ -249,7 +250,7 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
-  res.json(ownerRestaurant(store.findById(req.restaurantId)));
+  res.json({ ...ownerRestaurant(store.findById(req.restaurantId)), viaOps: req.viaOps === true });
 });
 
 /* ---------- Menu files (step 2.2) ---------- */
@@ -372,6 +373,17 @@ app.put('/api/ops/restaurants/:id', requireOps, (req, res) => {
   store.setLifecycle(r.id, f);
   const fresh = store.findById(r.id);
   res.json(opsRestaurant({ ...fresh, dishCount: store.listDishes(r.id).length }));
+});
+/* The founder opens a restaurant's own menu editor. It is a normal owner session with a mark on it (viaOps) and a
+   3-hour life. The mark is not "ops", so it never opens the ops area. */
+app.post('/api/ops/restaurants/:id/open-as-owner', requireOps, (req, res) => {
+  const r = store.findById(String(req.params.id));
+  if (!r) return res.status(404).json({ error: 'Restaurant not found' });
+  res.cookie(COOKIE_NAME, jwt.sign({ restaurantId: r.id, viaOps: true }, JWT_SECRET, { expiresIn: '3h' }), {
+    httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: 3 * 60 * 60 * 1000
+  });
+  console.log('[ops] founder opened the editor of ' + r.name + ' (' + r.id + ')');
+  res.json({ ok: true, url: '/admin' });
 });
 app.get('/api/ops/restaurants/:id/files', requireOps, (req, res) => {
   if (!store.findById(String(req.params.id))) return res.status(404).json({ error: 'Restaurant not found' });

@@ -253,6 +253,77 @@ async function bootCustomer(){
   renderCustomerPage();
 }
 
+/* Founder view (opened from /ops): a banner on top, and a panel with the menu photos the owner uploaded. */
+function renderOpsBanner(me){
+  if(document.getElementById('opsBar')) return;
+  function btn(text){
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = text;
+    b.style.cssText = 'background:#f5a623;color:#2a1b08;border:0;border-radius:8px;padding:6px 12px;font-weight:700;font-size:13px;cursor:pointer;';
+    return b;
+  }
+  const bar = document.createElement('div');
+  bar.id = 'opsBar';
+  bar.style.cssText = 'position:sticky;top:0;z-index:60;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:#3a2a0a;color:#ffd866;font:600 13px/1.3 -apple-system,system-ui,sans-serif;border-bottom:1px solid #6b4b0f;';
+  const label = document.createElement('span');
+  label.style.flex = '1';
+  label.textContent = 'Founder view: you are editing ' + me.name;
+  const photosBtn = btn('Menu photos');
+  const backBtn = btn('Back to ops');
+  bar.appendChild(label); bar.appendChild(photosBtn); bar.appendChild(backBtn);
+  document.body.prepend(bar);
+
+  const drawer = document.createElement('div');
+  drawer.id = 'opsDrawer';
+  drawer.style.cssText = 'display:none;position:fixed;top:46px;right:0;bottom:0;width:min(440px,92vw);z-index:70;background:#120c08;color:#f3e7d3;overflow:auto;padding:12px;box-shadow:-8px 0 24px rgba(0,0,0,.5);font:14px/1.4 -apple-system,system-ui,sans-serif;';
+  const head = document.createElement('div');
+  head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;';
+  const title = document.createElement('strong');
+  title.textContent = 'Menu photos from the owner';
+  const closeBtn = btn('Close');
+  head.appendChild(title); head.appendChild(closeBtn);
+  const body = document.createElement('div');
+  drawer.appendChild(head); drawer.appendChild(body);
+  document.body.appendChild(drawer);
+
+  let loaded = false;
+  async function loadFiles(){
+    body.textContent = 'Loading...';
+    try{
+      const r = await fetch('/api/ops/restaurants/' + encodeURIComponent(me.id) + '/files');
+      if(!r.ok) throw new Error('Please log in to /ops again to see the photos');
+      const files = await r.json();
+      body.textContent = '';
+      if(!files.length){ body.textContent = 'No files uploaded.'; return; }
+      files.forEach((f, i)=>{
+        const url = '/api/ops/restaurants/' + encodeURIComponent(me.id) + '/files/' + encodeURIComponent(f.name);
+        const a = document.createElement('a');
+        a.href = url; a.target = '_blank'; a.rel = 'noopener';
+        a.style.cssText = 'display:block;margin-bottom:10px;color:#f5a623;font-weight:700;';
+        if(f.type === 'pdf'){ a.textContent = 'Open PDF ' + (i + 1); }
+        else{
+          const img = document.createElement('img');
+          img.src = url; img.alt = 'Menu photo ' + (i + 1);
+          img.style.cssText = 'width:100%;border-radius:8px;border:1px solid #3b2d22;display:block;';
+          a.appendChild(img);
+        }
+        body.appendChild(a);
+      });
+      loaded = true;
+    }catch(e){ body.textContent = e.message; }
+  }
+  photosBtn.addEventListener('click', ()=>{
+    const open = drawer.style.display === 'none';
+    drawer.style.display = open ? 'block' : 'none';
+    if(open && !loaded) loadFiles();
+  });
+  closeBtn.addEventListener('click', ()=>{ drawer.style.display = 'none'; });
+  backBtn.addEventListener('click', async ()=>{
+    try{ await fetch('/api/auth/logout', { method:'POST' }); }catch(e){}
+    window.location.href = '/ops';
+  });
+}
+
 async function bootAdmin(){
   const me = await apiMe();
   if(!me){
@@ -262,6 +333,7 @@ async function bootAdmin(){
   }
   CURRENT_RESTAURANT = me;
   setMasthead(me.name, 'Restaurant admin');
+  if(me.viaOps){ renderOpsBanner(me); }
   renderAdminTabs();
   try{
     DISHES = await apiGetDishes();
