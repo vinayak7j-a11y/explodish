@@ -296,6 +296,98 @@ app.delete('/api/menu-files/:name', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+/* ---------- Ops back-office (step 2.3a) ---------- */
+/* The founder's own area. It has its own password (OPS_PASSWORD) and its own cookie. A restaurant owner's login
+   never opens it, and the ops login never opens an owner's area. Without OPS_PASSWORD it is switched off in
+   production; for local development it uses a printed dev password. */
+const OPS_COOKIE = 'explodish_ops';
+const OPS_DEV_PASSWORD = 'ops-dev-password';
+const OPS_PASSWORD = process.env.OPS_PASSWORD || (process.env.NODE_ENV !== 'production' ? OPS_DEV_PASSWORD : '');
+const OPS_OFF = { error: 'Ops is switched off. Set OPS_PASSWORD on the server to turn it on.' };
+const MENU_FILE_MIME = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp', pdf: 'application/pdf' };
+function sameText(a, b) {
+  const x = crypto.createHash('sha256').update(String(a)).digest();
+  const y = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(x, y);
+}
+function requireOps(req, res, next) {
+  if (!OPS_PASSWORD) return res.status(503).json(OPS_OFF);
+  const token = req.cookies && req.cookies[OPS_COOKIE];
+  if (!token) return res.status(401).json({ error: 'Not logged in' });
+  try {
+    const p = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    if (p.ops !== true) throw new Error('not an ops token');
+  } catch (e) {
+    return res.status(401).json({ error: 'Session expired. Please log in again' });
+  }
+  next();
+}
+function opsRestaurant(r) {
+  return {
+    id: r.id, name: r.name, slug: r.slug, email: r.email, whatsapp: r.whatsapp, plan: r.plan, status: r.status,
+    active: r.active, paidUntil: r.paidUntil, createdAt: r.createdAt, dishCount: r.dishCount || 0, fileCount: listMenuFiles(r.id).length
+  };
+}
+app.post('/api/ops/login', rateLimit(10, 15 * 60 * 1000), (req, res) => {
+  if (!OPS_PASSWORD) return res.status(503).json(OPS_OFF);
+  const pw = req.body && req.body.password;
+  if (typeof pw !== 'string' || !sameText(pw, OPS_PASSWORD)) return res.status(401).json({ error: 'Incorrect password' });
+  res.cookie(OPS_COOKIE, jwt.sign({ ops: true }, JWT_SECRET, { expiresIn: '12h' }), {
+    httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', maxAge: 12 * 60 * 60 * 1000
+  });
+  res.json({ ok: true });
+});
+app.post('/api/ops/logout', (req, res) => {
+  res.clearCookie(OPS_COOKIE);
+  res.json({ ok: true });
+});
+app.get('/api/ops/me', requireOps, (req, res) => {
+  res.json({ ok: true, publicUrl: (process.env.PUBLIC_URL || '').replace(/\/+$/, '') });
+});
+app.get('/api/ops/restaurants', requireOps, (req, res) => {
+  res.json(store.listRestaurants().map(opsRestaurant));
+});
+app.put('/api/ops/restaurants/:id', requireOps, (req, res) => {
+  const r = store.findById(String(req.params.id));
+  if (!r) return res.status(404).json({ error: 'Restaurant not found' });
+  const b = req.body || {};
+  const f = {};
+  if ('status' in b) {
+    if (!store.STATUSES.includes(b.status)) return res.status(400).json({ error: 'Unknown status' });
+    f.status = b.status;
+  }
+  if ('plan' in b) {
+    if (b.plan !== null && b.plan !== 'monthly' && b.plan !== 'yearly') return res.status(400).json({ error: 'Plan must be monthly or yearly' });
+    f.plan = b.plan;
+  }
+  if ('paidUntil' in b) {
+    if (b.paidUntil !== null) {
+      const s = b.paidUntil;
+      const ok = typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s;
+      if (!ok) return res.status(400).json({ error: 'Paid-until must be a real date like 2026-12-31' });
+    }
+    f.paidUntil = b.paidUntil;
+  }
+  if (!Object.keys(f).length) return res.status(400).json({ error: 'Nothing to change' });
+  store.setLifecycle(r.id, f);
+  const fresh = store.findById(r.id);
+  res.json(opsRestaurant({ ...fresh, dishCount: store.listDishes(r.id).length }));
+});
+app.get('/api/ops/restaurants/:id/files', requireOps, (req, res) => {
+  if (!store.findById(String(req.params.id))) return res.status(404).json({ error: 'Restaurant not found' });
+  res.json(listMenuFiles(String(req.params.id)));
+});
+app.get('/api/ops/restaurants/:id/files/:name', requireOps, (req, res) => {
+  const name = String(req.params.name);
+  if (!MENU_FILE_NAME.test(name)) return res.status(400).json({ error: 'Invalid file name' });
+  const r = store.findById(String(req.params.id));
+  if (!r) return res.status(404).json({ error: 'Restaurant not found' });
+  const file = path.join(menuDir(r.id), name);
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'File not found' });
+  res.set({ 'Content-Type': MENU_FILE_MIME[name.split('.').pop()], 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, max-age=300' });
+  res.sendFile(file);
+});
+
 /* ---------- Dishes ---------- */
 /* Two access paths: the public one a QR-scanning customer hits (read-only,
    scoped by restaurant slug, no login), and the admin one the owner tools
@@ -658,6 +750,9 @@ app.get('/api/qr', async (req, res) => {
    explicitly hand back index.html and let the frontend JS decide what to
    render based on window.location. Everything under /r/:slug is the public
    customer menu; /admin is the owner login + dashboard. */
+app.get('/ops', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'ops.html'));
+});
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -684,6 +779,7 @@ if (store.restaurantCount() === 0 && process.env.NODE_ENV !== 'production') {
 
 const server = app.listen(PORT, () => {
   console.log(`Explodish menu app running at http://localhost:${PORT}`);
+  if (!process.env.OPS_PASSWORD) console.log(process.env.NODE_ENV === 'production' ? 'WARNING: OPS_PASSWORD is not set, so /ops is switched off.' : 'Ops back-office: http://localhost:' + PORT + '/ops  (dev password: ' + OPS_DEV_PASSWORD + ')');
   if (process.env.NODE_ENV === 'production' && !process.env.PUBLIC_URL) console.warn('WARNING: PUBLIC_URL is not set. QR codes will use whatever address the owner opens admin from.');
   telegram.start();
   push.start();

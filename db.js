@@ -161,6 +161,12 @@ module.exports = {
   clearTelegramChat: rid => db.prepare('DELETE FROM telegram_links WHERE restaurant_id = ?').run(rid),
   listTelegramRestaurants: () => db.prepare('SELECT restaurant_id FROM telegram_links').all().map(r => r.restaurant_id),
   STATUSES,
+  /* Every restaurant, newest first, with its dish count. Used by the founder's /ops page. */
+  listRestaurants: () => {
+    const dishCounts = new Map(db.prepare('SELECT restaurant_id, COUNT(*) AS c FROM dishes GROUP BY restaurant_id').all().map(r => [r.restaurant_id, r.c]));
+    return db.prepare('SELECT * FROM restaurants ORDER BY created_at DESC, rowid DESC').all()
+      .map(r => ({ ...toRestaurant(r), dishCount: dishCounts.get(r.id) || 0 }));
+  },
   findByPreviewToken: t => (t ? (toRestaurant(db.prepare('SELECT * FROM restaurants WHERE preview_token = ?').get(String(t))) || null) : null),
   /* Changes only the lifecycle fields that are passed. An unknown status is refused and nothing is changed. */
   setLifecycle: (rid, f) => {
