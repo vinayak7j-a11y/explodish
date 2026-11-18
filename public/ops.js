@@ -37,9 +37,10 @@
     return d;
   }
   function menuLink(r) { return (state.publicUrl || location.origin) + '/r/' + r.slug; }
+  function previewLink(r) { return r.previewToken ? (state.publicUrl || location.origin) + '/p/' + r.previewToken : menuLink(r); }
   const TEMPLATES = [
     { label: 'Got your menu', text: r => 'Hi! This is Explodish. We got the menu for ' + r.name + '. We are building your menu now and will send you a private preview here.' },
-    { label: 'Preview ready', text: r => 'Hi! Your Explodish preview for ' + r.name + ' is ready: ' + menuLink(r) + '\nOpen it on your phone, tap a dish and change it. Tell us what you think.' },
+    { label: 'Preview ready', text: r => 'Hi! Your Explodish preview for ' + r.name + ' is ready: ' + previewLink(r) + '\nOpen it on your phone, tap a dish and change it. Tell us what you think.' },
     { label: 'Go live', text: r => 'Glad you like it! If you want to put ' + r.name + ' live on your table QR codes, reply here and we will share the next step.' }
   ];
   function waLink(r, text) { return 'https://wa.me/' + waDigits(r) + '?text=' + encodeURIComponent(text); }
@@ -117,6 +118,14 @@
       el('div', { class: 'row' }, [el('button', { class: 'btn', text: 'Open their menu editor', onclick: openEditor })]),
       el('h2', { text: 'Status' }),
       el('div', { class: 'row' }, statusBtns),
+      el('h2', { text: 'Private preview' }),
+      el('div', { class: 'muted', text: r.status === 'preview' && r.previewToken
+        ? 'Link: ' + previewLink(r) + (r.previewUntil ? '  ·  ends ' + String(r.previewUntil).slice(0, 10) : '')
+        : 'Not started. A preview is a private link for 7 days where orders are practice orders.' }),
+      el('div', { class: 'row' }, [
+        el('button', { class: 'btn', text: r.status === 'preview' ? 'Restart 7 days' : 'Start 7-day preview', onclick: startPreview }),
+        r.previewToken ? el('button', { class: 'btn sec', text: 'Copy link', onclick: () => { try { navigator.clipboard.writeText(previewLink(r)); state.message = 'Link copied'; } catch (e) { state.message = 'Could not copy'; } detailView(); } }) : null
+      ]),
       el('h2', { text: 'Paid until' }),
       el('div', { class: 'row' }, [paid,
         el('button', { class: 'btn', text: 'Save', onclick: () => save({ paidUntil: paid.value || null }) }),
@@ -134,6 +143,15 @@
       const updated = await api('PUT', '/api/ops/restaurants/' + encodeURIComponent(state.openId), fields);
       state.list = state.list.map(r => r.id === updated.id ? updated : r);
       state.message = 'Saved';
+    } catch (e) { state.error = e.message; }
+    detailView();
+  }
+  async function startPreview() {
+    state.error = ''; state.message = '';
+    try {
+      const updated = await api('POST', '/api/ops/restaurants/' + encodeURIComponent(state.openId) + '/preview', { days: 7 });
+      state.list = state.list.map(x => x.id === updated.id ? updated : x);
+      state.message = 'Preview started. Use "WhatsApp: Preview ready" to send the link.';
     } catch (e) { state.error = e.message; }
     detailView();
   }

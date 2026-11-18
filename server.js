@@ -326,7 +326,8 @@ function requireOps(req, res, next) {
 function opsRestaurant(r) {
   return {
     id: r.id, name: r.name, slug: r.slug, email: r.email, whatsapp: r.whatsapp, plan: r.plan, status: r.status,
-    active: r.active, paidUntil: r.paidUntil, createdAt: r.createdAt, dishCount: r.dishCount || 0, fileCount: listMenuFiles(r.id).length
+    active: r.active, paidUntil: r.paidUntil, createdAt: r.createdAt, dishCount: r.dishCount || 0, fileCount: listMenuFiles(r.id).length,
+    previewToken: r.previewToken, previewUntil: r.previewUntil
   };
 }
 app.post('/api/ops/login', rateLimit(10, 15 * 60 * 1000), (req, res) => {
@@ -369,10 +370,26 @@ app.put('/api/ops/restaurants/:id', requireOps, (req, res) => {
     }
     f.paidUntil = b.paidUntil;
   }
+  if (f.status === 'preview') { // choosing "preview" always leaves a working private link
+    if (!r.previewToken) f.previewToken = newPreviewToken();
+    if (!r.previewUntil || new Date(r.previewUntil).getTime() <= Date.now()) f.previewUntil = new Date(Date.now() + 7 * 86400000).toISOString();
+  }
   if (!Object.keys(f).length) return res.status(400).json({ error: 'Nothing to change' });
   store.setLifecycle(r.id, f);
   const fresh = store.findById(r.id);
   res.json(opsRestaurant({ ...fresh, dishCount: store.listDishes(r.id).length }));
+});
+function newPreviewToken() { return crypto.randomBytes(12).toString('hex'); }
+/* Start (or restart) a private preview: status becomes 'preview', the link keeps working for 1 to 30 days (7 by default). */
+app.post('/api/ops/restaurants/:id/preview', requireOps, (req, res) => {
+  const r = store.findById(String(req.params.id));
+  if (!r) return res.status(404).json({ error: 'Restaurant not found' });
+  const days = (req.body && req.body.days !== undefined) ? req.body.days : 7;
+  if (!Number.isInteger(days) || days < 1 || days > 30) return res.status(400).json({ error: 'Days must be a whole number from 1 to 30' });
+  const token = r.previewToken || newPreviewToken();
+  store.setLifecycle(r.id, { status: 'preview', previewToken: token, previewUntil: new Date(Date.now() + days * 86400000).toISOString() });
+  const base = (process.env.PUBLIC_URL || (req.protocol + '://' + req.get('host'))).replace(/\/+$/, '');
+  res.json({ ...opsRestaurant({ ...store.findById(r.id), dishCount: store.listDishes(r.id).length }), previewUrl: base + '/p/' + token });
 });
 /* The founder opens a restaurant's own menu editor. It is a normal owner session with a mark on it (viaOps) and a
    3-hour life. The mark is not "ops", so it never opens the ops area. */
@@ -406,19 +423,44 @@ app.get('/api/ops/restaurants/:id/files/:name', requireOps, (req, res) => {
    UI uses (requires login, always scoped to the logged-in restaurant —
    there is no dish route that lets you touch another restaurant's menu). */
 
+/* Step 2.5: private preview. A restaurant whose status is 'preview' is closed to the public at /r/<slug>.
+   It is reachable at its private link /p/<secret> for a limited time, where orders are only practice orders.
+   Its own owner (and the founder, in founder view) can still see the menu from the dashboard. */
+function ownerIdFromCookie(req) {
+  try {
+    const t = req.cookies && req.cookies[COOKIE_NAME];
+    return t ? jwt.verify(t, JWT_SECRET, { algorithms: ['HS256'] }).restaurantId || null : null;
+  } catch (e) { return null; }
+}
+function previewOpen(r) {
+  return !!(r && r.status === 'preview' && r.previewUntil && new Date(r.previewUntil).getTime() > Date.now());
+}
+/* The restaurant a customer-side request is about, or null. Works for /api/r/:slug/... and /api/preview/:token/... */
+function restaurantForCustomer(req) {
+  if (req.params.token !== undefined) {
+    const t = String(req.params.token);
+    const r = /^[A-Za-z0-9]{8,64}$/.test(t) ? store.findByPreviewToken(t) : null;
+    if (!r || !r.active || !previewOpen(r)) return null;
+    req.previewTest = true;
+    return r;
+  }
+  const r = activeBySlug(req.params.slug);
+  if (r && r.status === 'preview' && ownerIdFromCookie(req) !== r.id) return null;
+  return r;
+}
 function activeBySlug(slug) {
   const r = store.findBySlug(slug);
   return r && r.active ? r : null;
 }
 
-app.get('/api/r/:slug', (req, res) => {
-  const restaurant = activeBySlug(req.params.slug);
+app.get(['/api/r/:slug', '/api/preview/:token'], (req, res) => {
+  const restaurant = restaurantForCustomer(req);
   if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
-  res.json(customerRestaurant(restaurant));
+  res.json(req.previewTest ? { ...customerRestaurant(restaurant), preview: { until: restaurant.previewUntil } } : customerRestaurant(restaurant));
 });
 
-app.get('/api/r/:slug/dishes', (req, res) => {
-  const restaurant = activeBySlug(req.params.slug);
+app.get(['/api/r/:slug/dishes', '/api/preview/:token/dishes'], (req, res) => {
+  const restaurant = restaurantForCustomer(req);
   if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
   res.json(store.listDishes(restaurant.id).filter(d => !d.dietary || d.dietary === 'veg')); // hide any old non-veg dishes
 });
@@ -510,8 +552,8 @@ function priceItem(dish, it) {
 
 /* ---------- Orders ---------- */
 
-app.post('/api/r/:slug/orders', rateLimit(200, 10 * 60 * 1000), (req, res) => {
-  const restaurant = activeBySlug(req.params.slug);
+app.post(['/api/r/:slug/orders', '/api/preview/:token/orders'], rateLimit(200, 10 * 60 * 1000), (req, res) => {
+  const restaurant = restaurantForCustomer(req);
   if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
   if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
     return res.status(400).json({ error: 'Invalid order' });
@@ -577,7 +619,8 @@ app.post('/api/r/:slug/orders', rateLimit(200, 10 * 60 * 1000), (req, res) => {
   order.restaurantId = restaurant.id;
   order.time = new Date().toISOString();
   order.status = 'new'; // always starts as new, whatever the client sent
-  order.number = store.nextOrderNumber(restaurant.id, REPORT_TZ);
+  if (req.previewTest) { order.test = true; order.table = 'TEST'; } // orders from the private preview are practice orders
+  order.number = req.previewTest ? null : store.nextOrderNumber(restaurant.id, REPORT_TZ);
   store.insertOrder(order);
   notifyOrders(restaurant.id, 'new');
   telegram.notifyNewOrder(order, restaurant);
@@ -632,8 +675,8 @@ app.put('/api/ordering', requireAuth, (req, res) => {
 });
 
 /* A customer can check how their own order is going (no login; needs the order's random id). */
-app.get('/api/r/:slug/orders/:id/status', rateLimit(200, 10 * 60 * 1000), (req, res) => {
-  const restaurant = activeBySlug(req.params.slug);
+app.get(['/api/r/:slug/orders/:id/status', '/api/preview/:token/orders/:id/status'], rateLimit(200, 10 * 60 * 1000), (req, res) => {
+  const restaurant = restaurantForCustomer(req);
   const order = restaurant && store.getOrder(req.params.id);
   if (!order || order.restaurantId !== restaurant.id) return res.status(404).json({ error: 'Order not found' });
   const now = Date.now();
@@ -649,8 +692,8 @@ app.get('/api/r/:slug/orders/:id/status', rateLimit(200, 10 * 60 * 1000), (req, 
 });
 
 /* A customer can cancel their own order, but only before the kitchen starts it. */
-app.post('/api/r/:slug/orders/:id/cancel', rateLimit(60, 10 * 60 * 1000), (req, res) => {
-  const restaurant = activeBySlug(req.params.slug);
+app.post(['/api/r/:slug/orders/:id/cancel', '/api/preview/:token/orders/:id/cancel'], rateLimit(60, 10 * 60 * 1000), (req, res) => {
+  const restaurant = restaurantForCustomer(req);
   const order = restaurant && store.getOrder(req.params.id);
   if (!order || order.restaurantId !== restaurant.id) return res.status(404).json({ error: 'Order not found' });
   const status = order.status || 'new';
@@ -766,6 +809,10 @@ app.get('/ops', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'ops.html'));
 });
 app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+app.get('/p/:token', (req, res) => {
+  res.set('X-Robots-Tag', 'noindex, nofollow');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 app.get('/r/:slug', (req, res) => {

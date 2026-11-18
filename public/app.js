@@ -5,12 +5,12 @@
    scoped server-side to whichever restaurant is logged in — there's no
    admin call that takes a restaurant id, on purpose). */
 async function apiGetRestaurant(slug){
-  const r = await fetch(`/api/r/${slug}`);
+  const r = await fetch(custBase(slug));
   if(!r.ok) return null;
   return r.json();
 }
 async function apiGetPublicDishes(slug){
-  const r = await fetch(`/api/r/${slug}/dishes`);
+  const r = await fetch(custBase(slug) + '/dishes');
   if(!r.ok) return [];
   return r.json();
 }
@@ -20,7 +20,7 @@ async function apiCreatePublicOrder(slug, order){
   const timer = ctl ? setTimeout(()=>ctl.abort(), 20000) : null;
   let r;
   try{
-    r = await fetch(`/api/r/${slug}/orders`, {
+    r = await fetch(custBase(slug) + '/orders', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(order), signal: ctl ? ctl.signal : undefined
     });
   }catch(e){
@@ -190,11 +190,15 @@ const CURRENT_TABLE = (()=>{ const t = (new URLSearchParams(window.location.sear
 function detectRoute(){
   const path = window.location.pathname;
   const m = path.match(/^\/r\/([a-z0-9-]+)\/?$/);
+  const pm = path.match(/^\/p\/([A-Za-z0-9]{8,64})\/?$/);
+  if(pm) return { type:'customer', preview:true, token:pm[1] };
   if(m) return { type:'customer', slug:m[1] };
   if(path === '/admin' || path.startsWith('/admin/')) return { type:'admin' };
   return { type:'landing' };
 }
 const ROUTE = detectRoute();
+/* The customer-side API address: the normal one by restaurant slug, or the private preview one. */
+function custBase(slug){ return ROUTE.preview ? '/api/preview/' + ROUTE.token : '/api/r/' + slug; }
 
 function setMasthead(title, tag){
   const t = document.getElementById('mastheadTitle');
@@ -229,9 +233,28 @@ function bootLanding(){
   `;
 }
 
+/* Private preview (the /p/<secret> link): a banner that says orders are practice orders and how long the link works. */
+function showTokenPreviewBanner(restaurant){
+  if(document.getElementById('previewBar')) return;
+  const bar = document.createElement('div');
+  bar.id = 'previewBar';
+  bar.style.cssText = 'position:sticky;top:0;z-index:60;padding:8px 12px;background:#3a2a0a;color:#ffd866;font:600 13px/1.35 -apple-system,system-ui,sans-serif;border-bottom:1px solid #6b4b0f;text-align:center;';
+  const until = restaurant.preview && restaurant.preview.until ? new Date(restaurant.preview.until) : null;
+  const days = until ? Math.max(0, Math.ceil((until.getTime() - Date.now()) / 86400000)) : null;
+  bar.textContent = 'PREVIEW for ' + restaurant.name + '. Orders placed here are practice orders and ring your own kitchen screen.'
+    + (days !== null ? ' This private link works for ' + days + ' more day' + (days === 1 ? '' : 's') + '.' : '');
+  document.body.prepend(bar);
+}
+
 async function bootCustomer(){
-  PUBLIC_SLUG = ROUTE.slug;
+  PUBLIC_SLUG = ROUTE.preview ? ROUTE.token : ROUTE.slug;
   const restaurant = await apiGetRestaurant(PUBLIC_SLUG);
+  if(!restaurant && ROUTE.preview){
+    setMasthead('Explodish', '');
+    document.getElementById('panel').innerHTML =
+      '<div class="empty">This preview link has ended or is not valid. Please ask Explodish for a new one.</div>';
+    return;
+  }
   if(!restaurant){
     setMasthead('Explodish', '');
     document.getElementById('panel').innerHTML =
@@ -242,6 +265,7 @@ async function bootCustomer(){
   ORDERING_PAUSED = !!restaurant.orderingPaused; showPausedBanner();
   showTableChip();
   if(PREVIEW && typeof showPreviewBanner === 'function') showPreviewBanner();
+  if(ROUTE.preview) showTokenPreviewBanner(restaurant);
   try{
     DISHES = await apiGetPublicDishes(PUBLIC_SLUG);
   }catch(e){
@@ -2004,7 +2028,7 @@ function attachKitchenHandlers(){
 
 
 /* ---------- Customer conveniences: saved cart, order status, fresh menu ---------- */
-function cartSlug(){ if(PREVIEW) return null; const m = /^\/r\/([^\/?#]+)/.exec(location.pathname); return m ? m[1] : null; }
+function cartSlug(){ if(PREVIEW) return null; const m = /^\/(?:r|p)\/([^\/?#]+)/.exec(location.pathname); return m ? m[1] : null; }
 function loadCart(){
   try{
     const slug = cartSlug(); if(!slug) return [];
@@ -2108,7 +2132,7 @@ async function pollMyOrders(){
   if(!slug || !list.length){ if(b && Number(b.dataset.until||0) < Date.now()) b.remove(); return; }
   const last = list[list.length-1];
   try{
-    const r = await fetch('/api/r/' + slug + '/orders/' + last.id + '/status');
+    const r = await fetch(custBase(slug) + '/orders/' + last.id + '/status');
     if(r.status===404){ forgetOrder(last.id); return pollMyOrders(); }
     if(!r.ok) return;
     const data = await r.json();
@@ -2165,7 +2189,7 @@ function wireCancelButtons(){
 async function cancelMyOrder(id){
   if(!confirm('Cancel your order?')) return;
   try{
-    const r = await fetch('/api/r/' + cartSlug() + '/orders/' + id + '/cancel', { method:'POST' });
+    const r = await fetch(custBase(cartSlug()) + '/orders/' + id + '/cancel', { method:'POST' });
     if(r.status===409){ toast('Sorry, the kitchen has already started your order'); return pollMyOrders(); }
     if(!r.ok){ toast('Could not cancel. Please ask the staff.'); return; }
     showOrderBanner(id, 'cancelled'); forgetOrder(id);

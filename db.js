@@ -61,7 +61,7 @@ if (!db.prepare('PRAGMA table_info(restaurants)').all().some(c => c.name === 'or
 const STATUSES = ['waiting', 'building', 'preview', 'live', 'expired'];
 {
   const have = new Set(db.prepare('PRAGMA table_info(restaurants)').all().map(c => c.name));
-  const add = { status: "TEXT NOT NULL DEFAULT 'live'", plan: 'TEXT', whatsapp: 'TEXT', paid_until: 'TEXT', preview_token: 'TEXT' };
+  const add = { status: "TEXT NOT NULL DEFAULT 'live'", plan: 'TEXT', whatsapp: 'TEXT', paid_until: 'TEXT', preview_token: 'TEXT', preview_until: 'TEXT' };
   for (const [col, def] of Object.entries(add)) if (!have.has(col)) db.exec('ALTER TABLE restaurants ADD COLUMN ' + col + ' ' + def);
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_restaurants_preview ON restaurants(preview_token)');
 }
@@ -69,7 +69,7 @@ const STATUSES = ['waiting', 'building', 'preview', 'live', 'expired'];
 const toRestaurant = r => r && ({
   id: r.id, slug: r.slug, name: r.name, email: r.email,
   passwordHash: r.password_hash, active: !!r.active, orderingPaused: !!r.ordering_paused, createdAt: r.created_at,
-  status: r.status || 'live', plan: r.plan || null, whatsapp: r.whatsapp || null, paidUntil: r.paid_until || null, previewToken: r.preview_token || null
+  status: r.status || 'live', plan: r.plan || null, whatsapp: r.whatsapp || null, paidUntil: r.paid_until || null, previewToken: r.preview_token || null, previewUntil: r.preview_until || null
 });
 
 const q = {
@@ -170,7 +170,7 @@ module.exports = {
   findByPreviewToken: t => (t ? (toRestaurant(db.prepare('SELECT * FROM restaurants WHERE preview_token = ?').get(String(t))) || null) : null),
   /* Changes only the lifecycle fields that are passed. An unknown status is refused and nothing is changed. */
   setLifecycle: (rid, f) => {
-    const cols = { status: 'status', plan: 'plan', whatsapp: 'whatsapp', paidUntil: 'paid_until', previewToken: 'preview_token' };
+    const cols = { status: 'status', plan: 'plan', whatsapp: 'whatsapp', paidUntil: 'paid_until', previewToken: 'preview_token', previewUntil: 'preview_until' };
     const sets = [], vals = [];
     for (const [k, col] of Object.entries(cols)) {
       if (!(k in f)) continue;
